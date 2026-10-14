@@ -139,6 +139,112 @@ def human_version(text: str) -> str:
     return m.group(0) if m else ""
 
 
+# ───────────────────────────── presets ─────────────────────────────
+
+def normalize_preset(mode, fmt, quality) -> dict | None:
+    """Validate a mode/format/quality triple. None when it is unusable."""
+    if mode == "audio":
+        if fmt not in AUDIO_FORMATS:
+            return None
+        if fmt == "mp3":
+            try:
+                quality = int(quality)
+            except (TypeError, ValueError):
+                quality = 320
+            if quality not in MP3_BITRATES:
+                quality = 320
+        else:
+            quality = None
+    elif mode == "video":
+        if fmt != "mp4":
+            return None
+        if quality != "best":
+            try:
+                quality = int(quality)
+            except (TypeError, ValueError):
+                quality = "best"
+            if quality not in VIDEO_HEIGHTS:
+                quality = "best"
+    else:
+        return None
+    return {"mode": mode, "format": fmt, "quality": quality}
+
+
+class Destinations:
+    """Named folders, each carrying the format it exists for.
+
+    A sampling folder wants WAV, a music folder wants MP3 320: where a file goes
+    and what it is are one decision, so they travel together and one click sets
+    both. The format belongs to the destination, so changing it while a
+    destination is selected redefines that destination.
+    """
+
+    MAX = 8
+
+    def __init__(self, cfg: dict):
+        raw = cfg.get("destinations")
+        items = [self._clean(x) for x in raw if isinstance(x, dict)] if isinstance(raw, list) else []
+        self.items = [d for d in items if d]
+        if not self.items:
+            # carries over the single folder kept by earlier versions
+            self.items = [{"id": uuid.uuid4().hex[:8], "name": APP,
+                           "folder": str(cfg.get("folder") or default_download_dir()),
+                           "mode": "audio", "format": "mp3", "quality": 320}]
+        self.active = cfg.get("active") if self._find(cfg.get("active")) else self.items[0]["id"]
+
+    @staticmethod
+    def _clean(d: dict) -> dict | None:
+        folder = str(d.get("folder") or "").strip()
+        preset = normalize_preset(d.get("mode"), d.get("format"), d.get("quality"))
+        if not folder or not preset:
+            return None
+        return {"id": str(d.get("id") or uuid.uuid4().hex[:8])[:16],
+                "name": str(d.get("name") or "").strip()[:40] or Path(folder).name,
+                "folder": folder, **preset}
+
+    def _find(self, dest_id) -> dict | None:
+        return next((d for d in self.items if d["id"] == dest_id), None)
+
+    def current(self) -> dict:
+        return self._find(self.active) or self.items[0]
+
+    def get(self, dest_id) -> dict:
+        return self._find(dest_id) or self.current()
+
+    def select(self, dest_id) -> bool:
+        if not self._find(dest_id):
+            return False
+        self.active = dest_id
+        return True
+
+    def save(self, data: dict) -> dict | None:
+        d = self._clean(data)
+        if not d:
+            return None
+        existing = self._find(d["id"])
+        if existing:
+            existing.update(d)
+            return existing
+        if len(self.items) >= self.MAX:
+            return None
+        self.items.append(d)
+        return d
+
+    def remove(self, dest_id) -> bool:
+        if len(self.items) <= 1:
+            return False          # there is always somewhere to download to
+        d = self._find(dest_id)
+        if not d:
+            return False
+        self.items.remove(d)
+        if self.active == dest_id:
+            self.active = self.items[0]["id"]
+        return True
+
+    def public(self) -> dict:
+        return {"items": self.items, "active": self.active}
+
+
 # ───────────────────────────── engine ─────────────────────────────
 
 class Engine:
@@ -385,10 +491,14 @@ def normalize_info(d: dict, url: str) -> dict:
     sides = sorted({short_side(f) for f in formats if f.get("vcodec") not in (None, "none") and short_side(f)}, reverse=True)
     max_h = sides[0] if sides else 0
     heights = [h for h in VIDEO_HEIGHTS if max_h and h < max_h and h >= (sides[-1] if sides else 0) - 1]
+    # a DJ set or a long talk often ships its own track markers: when they are
+    # there, the split needs no manual selection at all
+    chapters = [c for c in (d.get("chapters") or []) if isinstance(c, dict) and c.get("title")]
     return {"kind": "video", "title": title, "uploader": uploader, "site": site,
             "duration": d.get("duration") or 0, "thumbnail": pick_thumbnail(d),
             "url": d.get("webpage_url") or url, "hasVideo": has_video, "hasAudio": has_audio,
-            "maxHeight": max_h, "heights": heights}
+            "maxHeight": max_h, "heights": heights, "chapters": len(chapters),
+            "chapterTitles": [str(c["title"])[:120] for c in chapters[:60]]}
 
 
 class InfoError(Exception):
@@ -428,8 +538,13 @@ PP_STAGE = {
     "VideoRemuxer": "converting", "VideoConvertor": "converting",
     "ThumbnailsConvertor": "cover", "EmbedThumbnail": "cover",
     "Metadata": "tagging", "FFmpegMetadata": "tagging",
+    "SplitChapters": "splitting", "FFmpegSplitChapters": "splitting",
     "MoveFiles": "finishing", "MoveFilesAfterDownload": "finishing",
 }
+
+# yt-dlp announces each piece it writes; the split runs inside the postprocessor
+# chain, so these files never pass through --print after_move
+CHAPTER_FILE_RE = re.compile(r"^\[SplitChapters\] Chapter \d+; Destination: (.+)$")
 
 
 class Job:
@@ -442,6 +557,7 @@ class Job:
         self.format = params["format"]             # mp3 wav flac m4a | mp4
         self.quality = params.get("quality")       # bitrate | height | "best"
         self.playlist = bool(params.get("playlist"))
+        self.split = bool(params.get("split"))     # cut into one file per chapter
         self.count = int(params.get("count") or 0)
         self.folder = params["folder"]
         self.status = "queued"                     # queued running done error canceled
@@ -482,7 +598,8 @@ class Job:
     def public(self) -> dict:
         size = self.total_size()
         return {"id": self.id, "url": self.url, "title": self.title, "thumbnail": self.thumbnail,
-                "mode": self.mode, "format": self.format, "quality": self.quality, "playlist": self.playlist,
+                "mode": self.mode, "format": self.format, "quality": self.quality,
+                "playlist": self.playlist, "split": self.split,
                 "status": self.status, "stage": self.stage, "percent": round(self.percent, 1),
                 "speed": self.speed, "eta": self.eta, "item": self.item, "items": self.items,
                 "failed": self.failed, "files": [Path(f).name for f in self.files], "size": size,
@@ -527,6 +644,12 @@ def build_job_args(engine: Engine, job: Job) -> list[str]:
         res = "res" if job.quality in (None, "best") else f"res:{job.quality}"
         a += ["-f", "bv*+ba/b", "-S", f"lang,{res},fps,vcodec:h264,acodec:aac",
               "--merge-output-format", "mp4", "--remux-video", "mp4"]
+    if job.split and not job.playlist:
+        # runs last in the postprocessor chain, so the pieces are cut from the
+        # converted, tagged, cover-embedded file, and by stream copy: lossless
+        # and near-instant. The full original is kept alongside the folder.
+        a += ["--split-chapters",
+              "-o", "chapter:%(title)s/%(section_number)03d - %(section_title)s.%(ext)s"]
     return a + ["--", job.url]
 
 
@@ -621,6 +744,12 @@ class JobManager:
                     continue
                 if line.startswith("SIPHON_"):
                     self._handle(job, line)
+                    continue
+                chapter = CHAPTER_FILE_RE.match(line)
+                if chapter:
+                    path = chapter.group(1).strip()
+                    if path and path not in job.files:
+                        job.files.append(path)
                     continue
                 tail.append(line)
                 tail[:] = tail[-40:]
@@ -787,12 +916,18 @@ class State:
         self.engine = Engine()
         self.jobs = JobManager(self.engine)
         cfg = read_json(CONFIG_FILE, {})
-        self.folder = cfg.get("folder") or str(default_download_dir())
+        self.dests = Destinations(cfg)
+        self.cfg_lock = threading.Lock()      # config writes arrive from several threads
         self.last_seen = time.time()
         self.server: ThreadingHTTPServer | None = None
 
+    @property
+    def folder(self) -> str:
+        return self.dests.current()["folder"]
+
     def save_config(self) -> None:
-        write_json(CONFIG_FILE, {"folder": self.folder})
+        with self.cfg_lock:
+            write_json(CONFIG_FILE, {"destinations": self.dests.items, "active": self.dests.active})
 
 
 STATE: State | None = None
@@ -867,6 +1002,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"app": APP, "version": VERSION})
         if path == "/api/state":
             return self._json(200, {"app": APP, "version": VERSION, "folder": STATE.folder,
+                                    "destinations": STATE.dests.public(),
                                     "engine": STATE.engine.snapshot(), "jobs": STATE.jobs.list()})
         if path == "/api/jobs":
             return self._json(200, {"jobs": STATE.jobs.list(), "engine": STATE.engine.snapshot()})
@@ -926,34 +1062,14 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/download":
             url = str(body.get("url") or "").strip()
-            mode = body.get("mode")
-            fmt = body.get("format")
-            quality = body.get("quality")
             if len(url) > 2048 or not URL_RE.match(url):
                 return self._json(400, {"error": "invalid_url"})
-            if mode == "audio":
-                if fmt not in AUDIO_FORMATS:
-                    return self._json(400, {"error": "bad_format"})
-                if fmt == "mp3":
-                    try:
-                        quality = int(quality)
-                    except (TypeError, ValueError):
-                        quality = 320
-                    if quality not in MP3_BITRATES:
-                        quality = 320
-                else:
-                    quality = None
-            elif mode == "video":
-                if fmt != "mp4":
-                    return self._json(400, {"error": "bad_format"})
-                if quality != "best":
-                    try:
-                        quality = int(quality)
-                    except (TypeError, ValueError):
-                        quality = "best"
-                    if quality not in VIDEO_HEIGHTS:
-                        quality = "best"
-            else:
+            dest = STATE.dests.get(body.get("destination"))
+            # the destination carries the format; an explicit one still wins, for
+            # retries and for callers that know what they want
+            preset = (normalize_preset(body.get("mode"), body.get("format"), body.get("quality"))
+                      if body.get("mode") else {k: dest[k] for k in ("mode", "format", "quality")})
+            if not preset:
                 return self._json(400, {"error": "bad_format"})
             thumb = str(body.get("thumbnail") or "")
             try:
@@ -961,13 +1077,47 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 count = 0
             job = STATE.jobs.add({
-                "url": url, "mode": mode, "format": fmt, "quality": quality,
+                "url": url, **preset,
                 "title": str(body.get("title") or "")[:300],
                 "thumbnail": thumb if thumb.startswith(("http://", "https://")) else "",
-                "playlist": bool(body.get("playlist")), "count": count,
-                "folder": STATE.folder,
+                "playlist": bool(body.get("playlist")), "split": bool(body.get("split")),
+                "count": count, "folder": dest["folder"],
             })
             return self._json(200, {"job": job.public()})
+
+        if path == "/api/destinations/select":
+            if not STATE.dests.select(str(body.get("id") or "")):
+                return self._json(404, {"error": "not_found"})
+            STATE.save_config()
+            return self._json(200, {"destinations": STATE.dests.public()})
+
+        if path == "/api/destinations/save":
+            saved = STATE.dests.save(body)
+            if not saved:
+                return self._json(400, {"error": "bad_destination"})
+            STATE.save_config()
+            return self._json(200, {"destinations": STATE.dests.public(), "saved": saved})
+
+        if path == "/api/destinations/remove":
+            if not STATE.dests.remove(str(body.get("id") or "")):
+                return self._json(400, {"error": "bad_destination"})
+            STATE.save_config()
+            return self._json(200, {"destinations": STATE.dests.public()})
+
+        if path == "/api/destinations/add":
+            try:                   # a destination without a folder is meaningless, so ask first
+                picked = choose_folder(STATE.folder, str(body.get("title") or "Download folder"))
+            except Exception as exc:
+                return self._json(500, {"error": "picker", "detail": str(exc)[:200]})
+            if picked:
+                Path(picked).mkdir(parents=True, exist_ok=True)
+                saved = STATE.dests.save({"folder": picked, "name": Path(picked).name,
+                                          "mode": "audio", "format": "mp3", "quality": 320})
+                if not saved:
+                    return self._json(400, {"error": "too_many"})
+                STATE.dests.select(saved["id"])
+                STATE.save_config()
+            return self._json(200, {"destinations": STATE.dests.public()})
 
         m = re.fullmatch(r"/api/jobs/([0-9a-f]{12})/(cancel|reveal)", path)
         if m:
@@ -1001,9 +1151,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(500, {"error": "picker", "detail": str(exc)[:200]})
             if picked:
                 Path(picked).mkdir(parents=True, exist_ok=True)
-                STATE.folder = picked
+                STATE.dests.current()["folder"] = picked   # re-points the selected destination
                 STATE.save_config()
-            return self._json(200, {"folder": STATE.folder})
+            return self._json(200, {"folder": STATE.folder, "destinations": STATE.dests.public()})
 
         if path == "/api/engine/update":
             if STATE.jobs.active_count():

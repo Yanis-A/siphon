@@ -5,6 +5,8 @@ A private, local alternative to NoTube-style converters. Paste a link from YouTu
 - **Audio:** MP3 (320 / 256 / 192 / 128 kbps), WAV, FLAC, M4A, with title, artist and a square cover embedded (MP3, FLAC, M4A)
 - **Video:** MP4 from 360p up to 4K, H.264 + AAC whenever the site offers it (plays everywhere and in any editor)
 - **Playlists:** whole playlists into their own numbered folder
+- **Destinations:** named folders that carry their own format — a *Samples* folder in WAV, a *Music* folder in MP3 320. One click sets where the file goes and what it is.
+- **Tracks:** when a mix or a DJ set ships chapter markers, split it into one file per track, named from the markers. The cut is a stream copy, so it is lossless and near-instant, and each piece keeps the cover and tags.
 - Parallel downloads, live progress, cancel and retry
 - English and French interface
 
@@ -15,7 +17,7 @@ A private, local alternative to NoTube-style converters. Paste a link from YouTu
 
 Needs [Python 3.10+](https://www.python.org/downloads/) (on Windows, tick *Add python.exe to PATH* during the install). The first launch installs the engine into a private `.venv` folder (about 80 MB, once). After that, Siphon opens in your browser in a second.
 
-Files go to `Downloads/Siphon` by default. Change it from the settings (slider icon) or the *Change* link under the download button.
+Files go to `Downloads/Siphon` by default. Add more destinations from the settings (slider icon): each one is a folder plus the format it exists for, and they show up as a row of buttons under the download button.
 
 Siphon quits on its own 10 minutes after you close its tab (never while something is downloading), or right away with the power button.
 

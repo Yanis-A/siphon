@@ -155,6 +155,14 @@ button:disabled{cursor:default}
 .btn2{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:38px;border-radius:var(--r-md);background:var(--raised);font-weight:600;font-size:14px}
 .btn2:hover:not(:disabled){background:#333948}
 .btn2:disabled{color:var(--faint)}
+.destlist{display:grid;gap:6px}
+.destrow{display:flex;align-items:center;gap:4px}
+.destpick{flex:1;min-width:0;display:grid;grid-template-columns:1fr auto;gap:0 8px;align-items:baseline;text-align:left;padding:7px 10px;border:1px solid var(--line);border-radius:var(--r-sm)}
+.destpick:hover{border-color:#465063}
+.destrow.on .destpick{border-color:var(--amber);box-shadow:inset 0 0 0 1px var(--amber)}
+.destpick .dname{font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.destpick .dfmt{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.destpick .dpath{grid-column:1/-1;font-size:11.5px;color:var(--faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
 .top-right{position:relative;display:flex;align-items:center;gap:6px}
 
 /* closed overlay */
@@ -206,10 +214,11 @@ button:disabled{cursor:default}
         <button class="btn2" id="updateBtn" type="button"><span data-icon="refresh-cw"></span><span data-t="updateEngine"></span></button>
         <p class="note" id="engineNote"></p>
         <div class="sep"></div>
-        <h3 data-t="folder"></h3>
-        <div class="dest"><span class="path" id="folderPath2"></span></div>
+        <h3 data-t="destinations"></h3>
+        <p class="note" style="margin:0 0 10px" data-t="destHint"></p>
+        <div class="destlist" id="destList"></div>
         <div style="display:flex;gap:8px;margin-top:10px">
-          <button class="btn2" type="button" data-action="choose-folder"><span data-t="change"></span></button>
+          <button class="btn2" type="button" data-action="add-destination"><span data-t="addDestination"></span></button>
           <button class="btn2" type="button" data-action="open-folder"><span data-t="openFolder"></span></button>
         </div>
       </div>
@@ -265,6 +274,9 @@ const T = {
     paste: "Paste", clear: "Clear", lookUp: "Look up link", settings: "Settings", quit: "Quit Siphon",
     langGroup: "Language", linkLabel: "Link", modeLabel: "What to download",
     formatLabel: "Format", bitrateLabel: "Bitrate", qualityLabel: "Quality",
+    destination: "Destination", addDestination: "Add a folder", removeDest: "Remove",
+    splitChapters: "Split into tracks", tracksN: n => `${n} tracks`,
+    destinations: "Destinations", destHint: "A folder and the format it is for. Picking one sets both.",
     reading: "Reading link…",
     audio: "Audio", video: "Video", best: "Best", kbps: "kbps",
     noVideo: "This link has no video",
@@ -285,6 +297,7 @@ const T = {
       queued: "Waiting", engine: "Waiting for engine update", starting: "Starting",
       download: "Downloading", download_video: "Downloading video", download_audio: "Downloading audio", download_media: "Downloading",
       merging: "Merging video and audio", converting: "Converting", cover: "Adding cover", tagging: "Writing tags",
+      splitting: "Splitting into tracks",
       finishing: "Saving", processing: "Processing", done: "Saved", canceled: "Canceled"
     },
     err: {
@@ -308,6 +321,8 @@ const T = {
       bad_request: "Siphon sent a request the server refused.",
       not_found: "That download no longer exists.",
       forbidden: "Siphon refused the request. Reload the page.",
+      bad_destination: "That destination could not be saved.",
+      too_many: "That's the maximum number of destinations.",
       generic: "Download failed.", server: "Something went wrong in Siphon.", picker: "Couldn't open the folder picker."
     }
   },
@@ -316,6 +331,9 @@ const T = {
     paste: "Coller", clear: "Effacer", lookUp: "Analyser le lien", settings: "Réglages", quit: "Quitter Siphon",
     langGroup: "Langue", linkLabel: "Lien", modeLabel: "Que télécharger",
     formatLabel: "Format", bitrateLabel: "Débit", qualityLabel: "Qualité",
+    destination: "Destination", addDestination: "Ajouter un dossier", removeDest: "Retirer",
+    splitChapters: "Découper en morceaux", tracksN: n => `${n} morceaux`,
+    destinations: "Destinations", destHint: "Un dossier et le format qui va avec. En choisir un règle les deux.",
     reading: "Lecture du lien…",
     audio: "Audio", video: "Vidéo", best: "Max", kbps: "kbps",
     noVideo: "Ce lien ne contient pas de vidéo",
@@ -336,6 +354,7 @@ const T = {
       queued: "En attente", engine: "En attente du moteur", starting: "Démarrage",
       download: "Téléchargement", download_video: "Téléchargement de la vidéo", download_audio: "Téléchargement de l’audio", download_media: "Téléchargement",
       merging: "Assemblage vidéo et audio", converting: "Conversion", cover: "Ajout de la pochette", tagging: "Écriture des tags",
+      splitting: "Découpage en morceaux",
       finishing: "Enregistrement", processing: "Traitement", done: "Enregistré", canceled: "Annulé"
     },
     err: {
@@ -359,6 +378,8 @@ const T = {
       bad_request: "Siphon a envoyé une requête que le serveur a refusée.",
       not_found: "Ce téléchargement n’existe plus.",
       forbidden: "Siphon a refusé la requête. Recharge la page.",
+      bad_destination: "Cette destination n’a pas pu être enregistrée.",
+      too_many: "Nombre maximum de destinations atteint.",
       generic: "Le téléchargement a échoué.", server: "Un problème est survenu dans Siphon.", picker: "Impossible d’ouvrir le sélecteur de dossier."
     }
   }
@@ -370,8 +391,12 @@ const store = {
   set(k, v) { try { localStorage.setItem("siphon." + k, JSON.stringify(v)); } catch {} }
 };
 let lang = store.get("lang", (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
-const prefs = Object.assign({ mode: "audio", audio: "mp3", bitrate: 320, quality: "best" }, store.get("prefs", {}));
-const S = { url: "", info: null, fetching: false, fetchErr: null, actionErr: null, jobs: [], engine: {}, folder: "", offline: false, misses: 0, addedAt: 0 };
+const MP3_RATES = [320, 256, 192, 128];
+/* The destination owns the active preset, but flipping between Audio and Video
+   must not forget what was set on the other side; that is all this remembers. */
+const memo = Object.assign({ audio: { format: "mp3", quality: 320 }, video: { format: "mp4", quality: "best" } }, store.get("memo", {}));
+const S = { url: "", info: null, fetching: false, fetchErr: null, actionErr: null, jobs: [], engine: {},
+            folder: "", dests: { items: [], active: "" }, split: false, offline: false, misses: 0, addedAt: 0 };
 let lookupCtl = null;
 const t = () => T[lang];
 const $ = s => document.querySelector(s);
@@ -449,7 +474,6 @@ function badgeText(j) {
   if (j.mode === "audio") return j.format === "mp3" ? `MP3 ${j.quality}` : j.format.toUpperCase();
   return j.quality === "best" || !j.quality ? "MP4" : `MP4 ${j.quality}p`;
 }
-function savePrefs() { store.set("prefs", prefs); }
 
 /* ───────── static text ───────── */
 function applyLang() {
@@ -473,7 +497,7 @@ async function lookup(raw) {
   urlInput.value = url; syncClear();
   lookupCtl?.abort(); lookupCtl = new AbortController();
   clearActionError();
-  Object.assign(S, { url, info: null, fetchErr: null, fetching: true });
+  Object.assign(S, { url, info: null, fetchErr: null, fetching: true, split: false });
   renderFetchMsg(); renderCard();
   try {
     const { info } = await api("/api/info", { url }, lookupCtl.signal, TIMEOUT.info);
@@ -559,36 +583,85 @@ function videoChoices() {
 }
 function effectiveQuality() {
   const vals = videoChoices().map(c => c.v);
-  if (vals.includes(prefs.quality)) return prefs.quality;
-  if (prefs.quality === "best") return "best";
-  const lower = vals.filter(v => v !== "best" && v <= prefs.quality);
+  const q = effectivePreset().quality;
+  if (vals.includes(q)) return q;
+  if (q === "best") return "best";
+  const lower = vals.filter(v => v !== "best" && v <= q);
   return lower.length ? lower[0] : "best";
 }
+
+/* ───────── destinations ───────── */
+/* A destination is a folder plus the format it exists for: "Samples" means WAV
+   into D:\Samples. Choosing where a file goes and choosing what it is are the
+   same decision, so one click sets both — and changing a format rewrites the
+   destination rather than drifting into a separate, invisible preference. */
+const activeDest = () => S.dests.items.find(d => d.id === S.dests.active) || S.dests.items[0] || null;
+
+function effectivePreset() {
+  const d = activeDest(), i = S.info;
+  let mode = d ? d.mode : "audio";
+  if (i) {   // a track has no video to offer, a silent clip no audio
+    if (mode === "video" && i.hasVideo === false) mode = "audio";
+    if (mode === "audio" && i.hasAudio === false) mode = "video";
+  }
+  // a destination holds one preset, so the other tab falls back to what was last used there
+  if (d && mode === d.mode) return { mode, format: d.format, quality: d.quality };
+  return { mode, format: memo[mode].format, quality: memo[mode].quality };
+}
+
+async function patchDest(patch) {
+  const d = activeDest(); if (!d) return;
+  Object.assign(d, patch);
+  memo[d.mode] = { format: d.format, quality: d.quality };
+  store.set("memo", memo);
+  renderOptions();                    // optimistic: the server only confirms
+  try { S.dests = (await api("/api/destinations/save", d)).destinations; clearActionError(); }
+  catch (e) { if (!aborted(e)) showActionError(e); }
+}
+
+async function selectDest(id) {
+  if (!id || id === S.dests.active) return;
+  S.dests.active = id;
+  S.folder = activeDest()?.folder || S.folder;
+  renderOptions();
+  try {
+    S.dests = (await api("/api/destinations/select", { id })).destinations;
+    S.folder = activeDest()?.folder || S.folder;
+    renderSettings(); clearActionError();
+  } catch (e) { if (!aborted(e)) showActionError(e); }
+}
+
 /* A wholesale innerHTML rebuild removes the control that was just activated, so
    keyboard focus falls back to <body>. Note it first, restore it after. */
 function focusMark(op) {
   const el = document.activeElement;
   if (!el || !op.contains(el)) return null;
   if (el.dataset.group) return `.choice[data-group="${CSS.escape(el.dataset.group)}"][data-v="${CSS.escape(el.dataset.v)}"]`;
+  if (el.dataset.dest) return `.choice[data-dest="${CSS.escape(el.dataset.dest)}"]`;
+  if (el.dataset.toggle) return `[data-toggle="${CSS.escape(el.dataset.toggle)}"]`;
   if (el.dataset.mode) return `.tab[data-mode="${CSS.escape(el.dataset.mode)}"]`;
   return el.id === "dlBtn" ? "#dlBtn" : null;
 }
 function renderOptions() {
   const i = S.info, op = $("#opts");
   const mark = focusMark(op);
+  const p = effectivePreset(), mode = p.mode;
   const canVideo = i.hasVideo !== false, canAudio = i.hasAudio !== false;
-  let mode = prefs.mode;
-  if (mode === "video" && !canVideo) mode = "audio";
-  if (mode === "audio" && !canAudio) mode = "video";
   const choice = (group, v, label, on, hint) => `<button type="button" class="choice" role="radio" aria-checked="${on}" data-group="${esc(group)}" data-v="${esc(v)}">${esc(label)}${hint ? `<span class="hint">${esc(hint)}</span>` : ""}</button>`;
   let rows = "";
   if (mode === "audio") {
-    rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().formatLabel)}">${["mp3", "wav", "flac", "m4a"].map(f => choice("audio", f, f.toUpperCase(), prefs.audio === f)).join("")}</div>`;
-    if (prefs.audio === "mp3") rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().bitrateLabel)}">${[320, 256, 192, 128].map(b => choice("bitrate", b, `${b} ${t().kbps}`, prefs.bitrate === b)).join("")}</div>`;
+    rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().formatLabel)}">${["mp3", "wav", "flac", "m4a"].map(f => choice("audio", f, f.toUpperCase(), p.format === f)).join("")}</div>`;
+    if (p.format === "mp3") rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().bitrateLabel)}">${MP3_RATES.map(b => choice("bitrate", b, `${b} ${t().kbps}`, p.quality === b)).join("")}</div>`;
   } else {
     const q = effectiveQuality();
     rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().qualityLabel)}">${videoChoices().map(c => choice("quality", c.v, c.label, q === c.v, c.hint)).join("")}</div>`;
   }
+  // the site already marked the tracks: no selection needed, just say yes
+  if (canSplit()) {
+    rows += `<div class="choices"><button type="button" class="choice" role="switch" aria-checked="${S.split}" data-toggle="split">${icon("list-video", "sm")}${esc(t().splitChapters)}<span class="hint">${esc(t().tracksN(i.chapters))}</span></button></div>`;
+  }
+  const chips = S.dests.items.map(d =>
+    `<button type="button" class="choice" role="radio" aria-checked="${d.id === S.dests.active}" data-dest="${esc(d.id)}" title="${esc(d.folder)}">${esc(d.name)}<span class="hint">${esc(badgeText(d))}</span></button>`).join("");
   op.innerHTML = `
     <div class="tabs" role="tablist" aria-label="${esc(t().modeLabel)}">
       <button type="button" class="tab" role="tab" data-mode="audio" aria-selected="${mode === "audio"}" ${canAudio ? "" : "disabled"}>${icon("music", "sm")}${esc(t().audio)}</button>
@@ -596,28 +669,40 @@ function renderOptions() {
     </div>
     ${rows}
     <button type="button" class="dl" id="dlBtn">${icon("download")}<span>${esc(downloadLabel(mode))}</span></button>
-    <div class="dest"><span>${esc(t().savingTo)}</span><span class="path" id="folderPath" title="${esc(S.folder)}"><bdi>${esc(S.folder)}</bdi></span>
-      <button type="button" class="link-btn" data-action="choose-folder">${esc(t().change)}</button></div>`;
+    <div>
+      <p class="row-label">${esc(t().savingTo)}</p>
+      <div class="choices" role="radiogroup" aria-label="${esc(t().destination)}">${chips}
+        <button type="button" class="choice" data-action="add-destination" title="${esc(t().addDestination)}" aria-label="${esc(t().addDestination)}">${icon("folder-open", "sm")}</button>
+      </div>
+      <div class="dest" style="margin-top:8px"><span class="path" title="${esc(S.folder)}"><bdi>${esc(S.folder)}</bdi></span>
+        <button type="button" class="link-btn" data-action="choose-folder">${esc(t().change)}</button></div>
+    </div>`;
   op.dataset.mode = mode;
   if (mark) { const back = op.querySelector(mark); if (back && !back.disabled) back.focus({ preventScroll: true }); }
 }
+const canSplit = () => !!(S.info && S.info.kind !== "playlist" && S.info.chapters > 1);
 function downloadLabel(mode) {
   if (Date.now() - S.addedAt < 1400) return t().added;
-  if (mode === "audio") return prefs.audio === "mp3" ? `${t().download} MP3 ${prefs.bitrate} ${t().kbps}` : `${t().download} ${prefs.audio.toUpperCase()}`;
+  const p = effectivePreset();
+  if (mode === "audio") return p.format === "mp3" ? `${t().download} MP3 ${p.quality} ${t().kbps}` : `${t().download} ${p.format.toUpperCase()}`;
   const q = effectiveQuality();
   return q === "best" ? `${t().download} MP4` : `${t().download} MP4 ${q}p`;
 }
 
 $("#opts").addEventListener("click", e => {
   const tab = e.target.closest(".tab");
-  if (tab) { if (!tab.disabled) { prefs.mode = tab.dataset.mode; savePrefs(); renderOptions(); } return; }
-  const c = e.target.closest(".choice");
+  if (tab) { if (!tab.disabled) patchDest({ mode: tab.dataset.mode, ...memo[tab.dataset.mode] }); return; }
+  const chip = e.target.closest("[data-dest]");
+  if (chip) { selectDest(chip.dataset.dest); return; }
+  const tog = e.target.closest("[data-toggle]");
+  if (tog) { S.split = !S.split; renderOptions(); return; }
+  const c = e.target.closest(".choice[data-group]");
   if (c) {
     const g = c.dataset.group, v = c.dataset.v;
-    if (g === "audio") prefs.audio = v;
-    if (g === "bitrate") prefs.bitrate = Number(v);
-    if (g === "quality") prefs.quality = v === "best" ? "best" : Number(v);
-    savePrefs(); renderOptions(); return;
+    if (g === "audio") patchDest({ mode: "audio", format: v, quality: v === "mp3" ? (MP3_RATES.includes(memo.audio.quality) ? memo.audio.quality : 320) : null });
+    if (g === "bitrate") patchDest({ mode: "audio", format: "mp3", quality: Number(v) });
+    if (g === "quality") patchDest({ mode: "video", format: "mp4", quality: v === "best" ? "best" : Number(v) });
+    return;
   }
   if (e.target.closest("#dlBtn")) startDownload();
 });
@@ -626,12 +711,13 @@ async function startDownload() {
   const i = S.info; if (!i) return;
   const btn = $("#dlBtn"); if (btn.disabled) return;
   btn.disabled = true;
-  const mode = $("#opts").dataset.mode;
+  const p = effectivePreset(), mode = p.mode;
   const body = {
     url: i.url || S.url, mode, title: i.title, thumbnail: i.thumbnail,
     playlist: i.kind === "playlist", count: i.count || 0,
-    format: mode === "audio" ? prefs.audio : "mp4",
-    quality: mode === "audio" ? (prefs.audio === "mp3" ? prefs.bitrate : null) : effectiveQuality()
+    destination: S.dests.active, split: S.split && canSplit(),
+    format: mode === "audio" ? p.format : "mp4",
+    quality: mode === "audio" ? (p.format === "mp3" ? p.quality : null) : effectiveQuality()
   };
   try {
     const { job } = await api("/api/download", body);
@@ -810,8 +896,15 @@ function renderSettings() {
     const c = S.engine.checked;
     note.textContent = t().checked(c ? new Date(c * 1000).toLocaleString(lang === "fr" ? "fr-FR" : "en-GB", { dateStyle: "medium", timeStyle: "short" }) : t().never);
   }
-  $("#folderPath2").innerHTML = `<bdi>${esc(S.folder)}</bdi>`;
-  $("#folderPath2").title = S.folder;
+  const many = S.dests.items.length > 1;
+  $("#destList").innerHTML = S.dests.items.map(d => `
+    <div class="destrow${d.id === S.dests.active ? " on" : ""}">
+      <button type="button" class="destpick" data-dest-pick="${esc(d.id)}" title="${esc(d.folder)}">
+        <span class="dname">${esc(d.name)}</span><span class="dfmt">${esc(badgeText(d))}</span>
+        <span class="dpath"><bdi>${esc(d.folder)}</bdi></span>
+      </button>
+      ${many ? `<button type="button" class="icon-btn" data-action="remove-destination" data-id="${esc(d.id)}" title="${esc(t().removeDest)}" aria-label="${esc(t().removeDest)}">${icon("x")}</button>` : ""}
+    </div>`).join("");
 }
 let settingsReturn = null;
 function openSettings() {
@@ -847,20 +940,30 @@ document.addEventListener("click", async e => {
   const a = e.target.closest("[data-action]"); if (!a) return;
   const action = a.dataset.action;
   // the picker is a native modal on the server side: a second click opens a second one
-  if (action === "choose-folder" && choosing) return;
+  const picks = action === "choose-folder" || action === "add-destination";
+  if (picks && choosing) return;
+  const after = d => {
+    if (d.destinations) S.dests = d.destinations;
+    S.folder = activeDest()?.folder || d.folder || S.folder;
+    if (S.info) renderOptions();
+    renderSettings(); clearActionError();
+  };
   try {
+    if (picks) { choosing = true; a.disabled = true; }
     if (action === "open-folder") { await api("/api/folder/open", {}); clearActionError(); }
-    if (action === "choose-folder") {
-      choosing = true; a.disabled = true;
-      // no deadline here: this call waits on a human in a native dialog
-      const d = await api("/api/folder/choose", { title: t().folder }, undefined, TIMEOUT.none);
-      S.folder = d.folder; if (S.info) renderOptions(); renderSettings(); clearActionError();
-    }
+    // no deadline on the two below: they wait on a human in a native dialog
+    if (action === "choose-folder") after(await api("/api/folder/choose", { title: t().folder }, undefined, TIMEOUT.none));
+    if (action === "add-destination") after(await api("/api/destinations/add", { title: t().addDestination }, undefined, TIMEOUT.none));
+    if (action === "remove-destination") after(await api("/api/destinations/remove", { id: a.dataset.id }));
   } catch (err) {
     if (!aborted(err)) showActionError(err);
   } finally {
-    if (action === "choose-folder") { choosing = false; a.disabled = false; }
+    if (picks) { choosing = false; a.disabled = false; }
   }
+});
+$("#settings").addEventListener("click", e => {
+  const pick = e.target.closest("[data-dest-pick]");
+  if (pick) selectDest(pick.dataset.destPick);
 });
 $("#quitBtn").addEventListener("click", async () => {
   if (S.jobs.some(j => j.status === "running" || j.status === "queued") && !confirm(t().quitConfirm)) return;
@@ -907,6 +1010,7 @@ async function loadState() {
   try {
     const d = await api("/api/state");
     S.folder = d.folder; S.jobs = d.jobs; S.engine = d.engine || {};
+    if (d.destinations) S.dests = d.destinations;
     renderJobs(); renderEngine(); if (S.info) renderOptions();
   } catch (e) {
     // not fatal: poll() is what reports a dead server, but a silent failure here
