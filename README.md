@@ -12,10 +12,20 @@ A private, local alternative to NoTube-style converters. Paste a link from YouTu
 
 ## Run it
 
-**Windows:** double-click `Siphon.bat`.
-**macOS / Linux:** run `Siphon.command`.
+Needs [Python 3.10+](https://www.python.org/downloads/) first. The first launch installs the engine into a private `.venv` folder (about 80 MB, once). After that, Siphon opens in your browser in a second.
 
-Needs [Python 3.10+](https://www.python.org/downloads/) (on Windows, tick *Add python.exe to PATH* during the install). The first launch installs the engine into a private `.venv` folder (about 80 MB, once). After that, Siphon opens in your browser in a second.
+**Windows:** install Python and tick *Add python.exe to PATH* during the install — it is easy to miss and nothing works without it. Then double-click `Siphon.bat`.
+
+**macOS:** a file downloaded from the internet arrives without permission to run, and macOS refuses unsigned scripts on top of that. So the first launch takes two extra steps, once:
+
+```sh
+cd /path/to/Siphon
+chmod +x Siphon.command
+```
+
+Then **right-click `Siphon.command` → Open** (not a double-click), and confirm *Open* in the warning. Every launch after that is a plain double-click. The warning is Gatekeeper saying the script has no paid Apple signature, not that anything is wrong with it.
+
+**Linux:** `./Siphon.command`. On Debian and Ubuntu you may need `sudo apt install python3-venv python3-tk` first — the second one only for the folder picker.
 
 Files go to `Downloads/Siphon` by default. Add more destinations from the settings (slider icon): each one is a folder plus the format it exists for, and they show up as a row of buttons under the download button.
 
