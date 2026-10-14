@@ -97,6 +97,10 @@ button:disabled{cursor:default}
 .choice .hint{color:var(--faint);font-weight:400;margin-left:4px}
 .choice[aria-checked="true"] .hint{color:var(--muted)}
 .row-label{font-size:13px;color:var(--faint);margin:0 0 6px}
+.marks{list-style:none;margin:0;padding:9px 11px;max-height:228px;overflow:auto;background:var(--ink);border:1px solid var(--line);border-radius:var(--r-sm);display:grid;gap:4px}
+.marks li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:baseline;font-size:12.5px;min-width:0}
+.marks .mno,.marks .mtime{color:var(--faint);font-variant-numeric:tabular-nums}
+.marks .mname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dl{height:48px;border-radius:var(--r-md);background:var(--amber);color:var(--on-amber);font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center;gap:9px;transition:background .15s}
 .dl:hover{background:var(--amber-hi)}
 .dl:disabled{background:var(--raised);color:var(--muted)}
@@ -277,6 +281,8 @@ const T = {
     destination: "Destination", addDestination: "Add a folder", removeDest: "Remove",
     splitChapters: "Split into tracks", tracksN: n => `${n} tracks`,
     fromChapters: "from the site's markers", fromDescription: "read from the description",
+    fromComments: a => a ? `found in a comment by ${a}` : "found in the comments",
+    findTracklist: "Look for a tracklist in the comments", searchingComments: "Reading the comments…",
     destinations: "Destinations", destHint: "A folder and the format it is for. Picking one sets both.",
     reading: "Reading link…",
     audio: "Audio", video: "Video", best: "Best", kbps: "kbps",
@@ -323,6 +329,7 @@ const T = {
       not_found: "That download no longer exists.",
       forbidden: "Siphon refused the request. Reload the page.",
       bad_destination: "That destination could not be saved.",
+      no_tracklist: "No tracklist found in the comments.",
       too_many: "That's the maximum number of destinations.",
       generic: "Download failed.", server: "Something went wrong in Siphon.", picker: "Couldn't open the folder picker."
     }
@@ -335,6 +342,8 @@ const T = {
     destination: "Destination", addDestination: "Ajouter un dossier", removeDest: "Retirer",
     splitChapters: "Découper en morceaux", tracksN: n => `${n} morceaux`,
     fromChapters: "d’après les marqueurs du site", fromDescription: "lu dans la description",
+    fromComments: a => a ? `trouvé dans un commentaire de ${a}` : "trouvé dans les commentaires",
+    findTracklist: "Chercher une tracklist dans les commentaires", searchingComments: "Lecture des commentaires…",
     destinations: "Destinations", destHint: "Un dossier et le format qui va avec. En choisir un règle les deux.",
     reading: "Lecture du lien…",
     audio: "Audio", video: "Vidéo", best: "Max", kbps: "kbps",
@@ -381,6 +390,7 @@ const T = {
       not_found: "Ce téléchargement n’existe plus.",
       forbidden: "Siphon a refusé la requête. Recharge la page.",
       bad_destination: "Cette destination n’a pas pu être enregistrée.",
+      no_tracklist: "Aucune tracklist trouvée dans les commentaires.",
       too_many: "Nombre maximum de destinations atteint.",
       generic: "Le téléchargement a échoué.", server: "Un problème est survenu dans Siphon.", picker: "Impossible d’ouvrir le sélecteur de dossier."
     }
@@ -398,7 +408,8 @@ const MP3_RATES = [320, 256, 192, 128];
    must not forget what was set on the other side; that is all this remembers. */
 const memo = Object.assign({ audio: { format: "mp3", quality: 320 }, video: { format: "mp4", quality: "best" } }, store.get("memo", {}));
 const S = { url: "", info: null, fetching: false, fetchErr: null, actionErr: null, jobs: [], engine: {},
-            folder: "", dests: { items: [], active: "" }, split: false, offline: false, misses: 0, addedAt: 0 };
+            folder: "", dests: { items: [], active: "" }, split: false, searching: false,
+            offline: false, misses: 0, addedAt: 0 };
 let lookupCtl = null;
 const t = () => T[lang];
 const $ = s => document.querySelector(s);
@@ -408,7 +419,7 @@ const $ = s => document.querySelector(s);
    but never answers leaves the UI waiting forever: no error, no way back.
    `info` tracks the server's own 150s lookup timeout; the folder picker gets
    none, since it waits on a human. */
-const TIMEOUT = { default: 20000, info: 180000, poll: 10000, none: 0 };
+const TIMEOUT = { default: 20000, info: 180000, poll: 10000, comments: 450000, none: 0 };
 
 /* A signal that also fires on timeout, without relying on AbortSignal.any. */
 function linkSignal(signal, ms) {
@@ -499,7 +510,7 @@ async function lookup(raw) {
   urlInput.value = url; syncClear();
   lookupCtl?.abort(); lookupCtl = new AbortController();
   clearActionError();
-  Object.assign(S, { url, info: null, fetchErr: null, fetching: true, split: false });
+  Object.assign(S, { url, info: null, fetchErr: null, fetching: true, split: false, searching: false });
   renderFetchMsg(); renderCard();
   try {
     const { info } = await api("/api/info", { url }, lookupCtl.signal, TIMEOUT.info);
@@ -658,10 +669,17 @@ function renderOptions() {
     const q = effectiveQuality();
     rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().qualityLabel)}">${videoChoices().map(c => choice("quality", c.v, c.label, q === c.v, c.hint)).join("")}</div>`;
   }
-  // the cut points are already known, from the site or from the description
+  // the cut points are already known, from the site, the description or a comment
   if (canSplit()) {
-    const origin = i.marksFrom === "chapters" ? t().fromChapters : t().fromDescription;
+    const origin = i.marksFrom === "chapters" ? t().fromChapters
+                 : i.marksFrom === "comments" ? t().fromComments(i.marksAuthor)
+                 : t().fromDescription;
     rows += `<div class="choices"><button type="button" class="choice" role="switch" aria-checked="${S.split}" data-toggle="split">${icon("list-video", "sm")}${esc(t().splitChapters)}<span class="hint">${esc(`${t().tracksN(i.marks.length)} · ${origin}`)}</span></button></div>`;
+    if (S.split) rows += marksList(i);   // seeing the names is the only way to trust the split
+  }
+  if (canSearchComments()) {
+    const busy = S.searching;
+    rows += `<div class="choices"><button type="button" class="choice" data-action="find-tracklist"${busy ? " disabled" : ""}>${icon(busy ? "loader-circle" : "list-video", busy ? "sm spin" : "sm")}${esc(busy ? t().searchingComments : t().findTracklist)}</button></div>`;
   }
   const chips = S.dests.items.map(d =>
     `<button type="button" class="choice" role="radio" aria-checked="${d.id === S.dests.active}" data-dest="${esc(d.id)}" title="${esc(d.folder)}">${esc(d.name)}<span class="hint">${esc(badgeText(d))}</span></button>`).join("");
@@ -684,6 +702,18 @@ function renderOptions() {
   if (mark) { const back = op.querySelector(mark); if (back && !back.disabled) back.focus({ preventScroll: true }); }
 }
 const canSplit = () => !!(S.info && S.info.kind !== "playlist" && (S.info.marks || []).length > 1);
+// only worth offering on something long enough to actually be a set
+const canSearchComments = () => !!(S.info && S.info.kind !== "playlist" && (S.info.duration || 0) > 600);
+
+/* The exact filenames the split will produce. Without this the toggle is a leap
+   of faith: 23 tracks, but named from the markers or just "part 1"? */
+function marksList(i) {
+  const rowsHtml = i.marks.map((m, n) => {
+    const name = m.title || `${i.title} ${n + 1}`;
+    return `<li><span class="mno">${String(n + 1).padStart(3, "0")}</span><span class="mname">${esc(name)}</span><span class="mtime">${esc(fmtDur(m.start))}</span></li>`;
+  }).join("");
+  return `<ol class="marks">${rowsHtml}</ol>`;
+}
 function downloadLabel(mode) {
   if (Date.now() - S.addedAt < 1400) return t().added;
   const p = effectivePreset();
@@ -945,6 +975,7 @@ document.addEventListener("click", async e => {
   // the picker is a native modal on the server side: a second click opens a second one
   const picks = action === "choose-folder" || action === "add-destination";
   if (picks && choosing) return;
+  if (action === "find-tracklist" && (S.searching || !S.info)) return;
   const after = d => {
     if (d.destinations) S.dests = d.destinations;
     S.folder = activeDest()?.folder || d.folder || S.folder;
@@ -958,10 +989,25 @@ document.addEventListener("click", async e => {
     if (action === "choose-folder") after(await api("/api/folder/choose", { title: t().folder }, undefined, TIMEOUT.none));
     if (action === "add-destination") after(await api("/api/destinations/add", { title: t().addDestination }, undefined, TIMEOUT.none));
     if (action === "remove-destination") after(await api("/api/destinations/remove", { id: a.dataset.id }));
+    if (action === "find-tracklist") {
+      const asked = S.url;
+      S.searching = true; renderOptions();
+      const d = await api("/api/tracklist", { url: S.info.url || S.url, duration: S.info.duration || 0 },
+                          undefined, TIMEOUT.comments);
+      if (S.info && S.url === asked) {        // the link may have changed while we read
+        if ((d.marks || []).length > 1) {
+          Object.assign(S.info, { marks: d.marks, marksFrom: "comments", marksAuthor: d.author || "" });
+          S.split = true; clearActionError();
+        } else {
+          showActionError({ code: "no_tracklist" });
+        }
+      }
+    }
   } catch (err) {
     if (!aborted(err)) showActionError(err);
   } finally {
     if (picks) { choosing = false; a.disabled = false; }
+    if (action === "find-tracklist") { S.searching = false; if (S.info) renderOptions(); }
   }
 });
 $("#settings").addEventListener("click", e => {

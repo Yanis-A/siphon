@@ -604,6 +604,58 @@ def fetch_info(engine: Engine, url: str) -> dict:
     return normalize_info(data, url)
 
 
+COMMENT_TIMEOUT = 420
+COMMENT_ARGS = "youtube:comment_sort=top;max_comments=150,all,0,0"
+
+
+def fetch_comment_tracklist(engine: Engine, url: str, duration: int) -> dict:
+    """Hunt for the comment somebody wrote the tracklist into.
+
+    Under a long set there is nearly always one: a listener lists every ID with
+    its timecode, and it floats to the top. Candidates are ranked by how many
+    timestamps they carry rather than by likes, because the most-liked comment
+    is usually applause. Replies are skipped: tracklists are top-level posts,
+    and fetching them is what makes this slow.
+    """
+    engine.acquire()
+    try:
+        args = engine.base_args() + ["-J", "--no-playlist", "--no-warnings", "--write-comments",
+                                     "--extractor-args", COMMENT_ARGS, "--", url]
+        res = subprocess.run(args, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                             timeout=COMMENT_TIMEOUT, env=child_env(), stdin=subprocess.DEVNULL,
+                             creationflags=NO_WINDOW)
+    except subprocess.TimeoutExpired:
+        raise InfoError("timeout", "")
+    finally:
+        engine.release()
+    if res.returncode != 0 or not res.stdout.strip():
+        detail = clean_error([l for l in res.stderr.splitlines() if l.strip()])
+        raise InfoError(classify_error(detail or res.stderr), detail)
+    try:
+        data = json.loads(res.stdout)
+    except json.JSONDecodeError:
+        raise InfoError("engine", "Invalid response from yt-dlp")
+    comments = data.get("comments") or []
+    best = best_comment_tracklist(comments, duration)
+    log.info("comment tracklist for %s: %s comments, best has %s marks",
+             url, len(comments), len(best["marks"]))
+    return best
+
+
+def best_comment_tracklist(comments, duration: int) -> dict:
+    """Of all the comments, the one carrying the most timestamps wins."""
+    best: dict = {"marks": [], "author": "", "likes": 0, "scanned": 0}
+    for c in comments if isinstance(comments, list) else []:
+        if not isinstance(c, dict):
+            continue
+        best["scanned"] += 1
+        found = parse_tracklist(c.get("text") or "", duration)
+        if len(found) > len(best["marks"]):
+            best.update(marks=found, author=str(c.get("author") or "")[:80],
+                        likes=int(c.get("like_count") or 0))
+    return best
+
+
 # ───────────────────────────── jobs ─────────────────────────────
 
 PP_STAGE = {
@@ -1193,6 +1245,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, {"info": fetch_info(STATE.engine, url)})
             except InfoError as e:
                 return self._json(422, {"error": e.code, "detail": e.detail})
+
+        if path == "/api/tracklist":
+            url = str(body.get("url") or "").strip()
+            if len(url) > 2048 or not URL_RE.match(url):
+                return self._json(400, {"error": "invalid_url"})
+            try:
+                duration = max(0, int(body.get("duration") or 0))
+            except (TypeError, ValueError):
+                duration = 0
+            try:
+                found = fetch_comment_tracklist(STATE.engine, url, duration)
+            except InfoError as e:
+                return self._json(422, {"error": e.code, "detail": e.detail})
+            return self._json(200, {"marks": found["marks"], "author": found["author"],
+                                    "likes": found["likes"], "scanned": found["scanned"]})
 
         if path == "/api/download":
             url = str(body.get("url") or "").strip()
