@@ -255,6 +255,11 @@ button:disabled{cursor:default}
                 style="width:100%;justify-content:center"><span data-t="keepAlive"></span></button>
         <p class="note" style="margin:8px 0 0" data-t="keepAliveHint"></p>
         <div class="sep"></div>
+        <h3 data-t="cookies"></h3>
+        <p class="note" style="margin:0 0 10px" data-t="cookiesHint"></p>
+        <div class="choices" id="cookiePick" role="radiogroup"></div>
+        <p class="note" id="cookieWarn" hidden></p>
+        <div class="sep"></div>
         <h3 data-t="destinations"></h3>
         <p class="note" style="margin:0 0 10px" data-t="destHint"></p>
         <div class="destlist" id="destList"></div>
@@ -368,6 +373,9 @@ const T = {
     destinations: "Destinations", destHint: "A folder and the format it is for. Picking one sets both.",
     keepAlive: "Keep Siphon running",
     keepAliveHint: "Siphon normally quits ten minutes after you close its tab. Keep it running for the browser extension, which needs it to answer.",
+    cookies: "Sign in through a browser", cookiesOff: "Off",
+    cookiesHint: "Siphon downloads on its own and is signed in to nothing, which is why age-restricted, members-only and private links fail. Point it at a browser and it reads that browser's session from disk — nothing is exported, nothing leaves this machine.",
+    cookiesOn: b => `Siphon now acts as you are signed in on ${b}. Your own account carries the activity, so leave this off when you do not need it.`,
     reading: "Reading link…",
     audio: "Audio", video: "Video", best: "Best", kbps: "kbps",
     noVideo: "This link has no video",
@@ -414,6 +422,8 @@ const T = {
       forbidden: "Siphon refused the request. Reload the page.",
       bad_destination: "That destination could not be saved.",
       no_tracklist: "No tracklist found in the comments.",
+      login: "This needs an account. Turn on “Sign in through a browser” in settings, signed in to the site there.",
+      cookies: "Siphon could not read that browser's cookies. Close the browser and retry, or pick another one in settings.",
       too_many: "That's the maximum number of destinations.",
       generic: "Download failed.", server: "Something went wrong in Siphon.", picker: "Couldn't open the folder picker."
     }
@@ -444,6 +454,9 @@ const T = {
     destinations: "Destinations", destHint: "Un dossier et le format qui va avec. En choisir un règle les deux.",
     keepAlive: "Garder Siphon actif",
     keepAliveHint: "Siphon se ferme normalement dix minutes après que tu quittes son onglet. Garde-le actif pour l’extension navigateur, qui a besoin qu’il réponde.",
+    cookies: "Se connecter via un navigateur", cookiesOff: "Désactivé",
+    cookiesHint: "Siphon télécharge de son côté et n’est connecté à rien : c’est pour ça que les contenus avec limite d’âge, réservés aux membres ou privés échouent. Désigne un navigateur et il lira sa session sur le disque — rien n’est exporté, rien ne quitte cette machine.",
+    cookiesOn: b => `Siphon agit maintenant comme ta session ${b}. C’est ton compte qui porte l’activité : laisse ça désactivé quand tu n’en as pas besoin.`,
     reading: "Lecture du lien…",
     audio: "Audio", video: "Vidéo", best: "Max", kbps: "kbps",
     noVideo: "Ce lien ne contient pas de vidéo",
@@ -490,6 +503,8 @@ const T = {
       forbidden: "Siphon a refusé la requête. Recharge la page.",
       bad_destination: "Cette destination n’a pas pu être enregistrée.",
       no_tracklist: "Aucune tracklist trouvée dans les commentaires.",
+      login: "Ce contenu demande un compte. Active « Se connecter via un navigateur » dans les réglages, en étant connecté au site.",
+      cookies: "Siphon n’a pas pu lire les cookies de ce navigateur. Ferme-le et réessaie, ou choisis-en un autre dans les réglages.",
       too_many: "Nombre maximum de destinations atteint.",
       generic: "Le téléchargement a échoué.", server: "Un problème est survenu dans Siphon.", picker: "Impossible d’ouvrir le sélecteur de dossier."
     }
@@ -1059,6 +1074,14 @@ function renderSettings() {
     note.textContent = t().checked(c ? new Date(c * 1000).toLocaleString(lang === "fr" ? "fr-FR" : "en-GB", { dateStyle: "medium", timeStyle: "short" }) : t().never);
   }
   $("#keepAlive").setAttribute("aria-checked", String(!!S.keepAlive));
+  const browsers = S.browsers && S.browsers.length ? S.browsers : ["firefox", "chrome", "edge", "brave"];
+  const names = { firefox: "Firefox", chrome: "Chrome", edge: "Edge", brave: "Brave",
+                  chromium: "Chromium", opera: "Opera", vivaldi: "Vivaldi", safari: "Safari" };
+  $("#cookiePick").innerHTML = [["", t().cookiesOff], ...browsers.map(b => [b, names[b] || b])]
+    .map(([v, label]) => `<button type="button" class="choice" role="radio" aria-checked="${(S.cookiesFrom || "") === v}" data-cookie="${esc(v)}">${esc(label)}</button>`).join("");
+  const warn = $("#cookieWarn");
+  warn.hidden = !S.cookiesFrom;
+  warn.textContent = S.cookiesFrom ? t().cookiesOn(names[S.cookiesFrom] || S.cookiesFrom) : "";
   const many = S.dests.items.length > 1;
   $("#destList").innerHTML = S.dests.items.map(d => `
     <div class="destrow${d.id === S.dests.active ? " on" : ""}">
@@ -1145,8 +1168,23 @@ document.addEventListener("click", async e => {
 });
 $("#settings").addEventListener("click", e => {
   const pick = e.target.closest("[data-dest-pick]");
-  if (pick) selectDest(pick.dataset.destPick);
+  if (pick) { selectDest(pick.dataset.destPick); return; }
+  const cookie = e.target.closest("[data-cookie]");
+  if (cookie) setCookieBrowser(cookie.dataset.cookie);
 });
+async function setCookieBrowser(which) {
+  const before = S.cookiesFrom || "";
+  if (which === before) return;
+  S.cookiesFrom = which; renderSettings();        // optimistic; the server confirms
+  try {
+    const d = await api("/api/settings", { cookiesFrom: which });
+    S.cookiesFrom = d.cookiesFrom || ""; S.browsers = d.browsers || S.browsers;
+    renderSettings(); clearActionError();
+  } catch (e) {
+    if (aborted(e)) return;
+    S.cookiesFrom = before; renderSettings(); showActionError(e);
+  }
+}
 $("#keepAlive").addEventListener("click", async () => {
   const next = !S.keepAlive;
   S.keepAlive = next; renderSettings();          // optimistic; the server confirms
@@ -1754,6 +1792,7 @@ async function loadState() {
     S.folder = d.folder; S.jobs = d.jobs; S.engine = d.engine || {};
     if (d.destinations) S.dests = d.destinations;
     S.keepAlive = !!d.keepAlive;
+    S.cookiesFrom = d.cookiesFrom || ""; S.browsers = d.browsers || [];
     renderJobs(); renderEngine(); if (S.info) renderOptions();
   } catch (e) {
     // not fatal: poll() is what reports a dead server, but a silent failure here

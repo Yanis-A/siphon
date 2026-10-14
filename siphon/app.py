@@ -50,6 +50,10 @@ IS_WIN = os.name == "nt"
 IS_MAC = sys.platform == "darwin"
 NO_WINDOW = 0x08000000 if IS_WIN else 0  # CREATE_NO_WINDOW
 
+# Browsers yt-dlp can read a cookie store from. Off by default: borrowing your
+# session is a thing to switch on deliberately, not something to inherit.
+COOKIE_BROWSERS = ("firefox", "chrome", "edge", "brave", "chromium", "opera", "vivaldi", "safari")
+
 AUDIO_FORMATS = {"mp3", "wav", "flac", "m4a"}
 MP3_BITRATES = {320, 256, 192, 128}
 COVER_FORMATS = {"mp3", "flac", "m4a"}
@@ -355,6 +359,7 @@ class Engine:
         self.status = "idle"          # idle | updating | error
         self.versions: dict = {}
         self.last_error = ""
+        self.cookies_from = ""        # a browser name, or empty for no cookies at all
 
     def acquire(self, should_stop=lambda: False) -> bool:
         """Register a user of the engine; waits while an update is running."""
@@ -426,6 +431,10 @@ class Engine:
         ff = self.ffmpeg()
         if ff:
             args += ["--ffmpeg-location", ff]
+        if self.cookies_from:
+            # read straight from the browser's own store: nothing to export, and
+            # the session never leaves this machine
+            args += ["--cookies-from-browser", self.cookies_from]
         return args + self.js_runtime_args()
 
     def refresh_versions(self) -> dict:
@@ -509,6 +518,10 @@ class Engine:
 # ───────────────────────────── errors ─────────────────────────────
 
 ERROR_RULES = [
+    (r"cookies database|could not (find|copy|read|decrypt).{0,40}cookie|unsupported browser|DPAPI|"
+     r"could not find .* cookies|--cookies-from-browser", "cookies"),
+    (r"locked behind the login|You need to log in|rate.?limit for accessing posts anonymously|"
+     r"requires authentication|login required|Sign in to view", "login"),
     (r"Unsupported URL|is not a valid URL|No video formats found|Unable to extract", "unsupported"),
     (r"confirm you.?re not a bot|Sign in to confirm you", "bot"),
     (r"confirm your age|age.restricted|inappropriate for some users", "age"),
@@ -1243,6 +1256,8 @@ class State:
         # the browser extension needs Siphon to still be there when it calls, so
         # the idle watchdog becomes optional
         self.keep_alive = bool(cfg.get("keepAlive"))
+        want = str(cfg.get("cookiesFrom") or "").lower()
+        self.engine.cookies_from = want if want in COOKIE_BROWSERS else ""
         self.cfg_lock = threading.Lock()      # config writes arrive from several threads
         self.last_seen = time.time()
         self.server: ThreadingHTTPServer | None = None
@@ -1254,7 +1269,8 @@ class State:
     def save_config(self) -> None:
         with self.cfg_lock:
             write_json(CONFIG_FILE, {"destinations": self.dests.items, "active": self.dests.active,
-                                     "keepAlive": self.keep_alive})
+                                     "keepAlive": self.keep_alive,
+                                     "cookiesFrom": self.engine.cookies_from})
 
 
 STATE: State | None = None
@@ -1356,6 +1372,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/state":
             return self._json(200, {"app": APP, "version": VERSION, "folder": STATE.folder,
                                     "destinations": STATE.dests.public(), "keepAlive": STATE.keep_alive,
+                                    "cookiesFrom": STATE.engine.cookies_from, "browsers": list(COOKIE_BROWSERS),
                                     "engine": STATE.engine.snapshot(), "jobs": STATE.jobs.list()})
         if path == "/api/jobs":
             return self._json(200, {"jobs": STATE.jobs.list(), "engine": STATE.engine.snapshot()})
@@ -1495,10 +1512,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"job": job.public()})
 
         if path == "/api/settings":
+            changed = False
             if "keepAlive" in body:
                 STATE.keep_alive = bool(body.get("keepAlive"))
+                changed = True
+            if "cookiesFrom" in body:
+                want = str(body.get("cookiesFrom") or "").lower()
+                STATE.engine.cookies_from = want if want in COOKIE_BROWSERS else ""
+                changed = True
+            if changed:
                 STATE.save_config()
-            return self._json(200, {"keepAlive": STATE.keep_alive})
+            return self._json(200, {"keepAlive": STATE.keep_alive,
+                                    "cookiesFrom": STATE.engine.cookies_from,
+                                    "browsers": list(COOKIE_BROWSERS)})
 
         if path == "/api/destinations/select":
             if not STATE.dests.select(str(body.get("id") or "")):
