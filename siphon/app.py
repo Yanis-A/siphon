@@ -232,15 +232,26 @@ def close_marks(marks: list[dict], duration: int = 0) -> list[dict]:
     return out
 
 
-def marks_from_info(d: dict, duration: int) -> tuple[list[dict], str]:
-    """Chapter markers when the site has them, the description otherwise."""
+def sources_from_info(d: dict, duration: int) -> list[dict]:
+    """Every place a tracklist was found, most trustworthy first.
+
+    They are kept side by side rather than collapsed into one: the site's
+    markers and a listener's list often disagree, and only the person doing the
+    split can say which is right. Replacing one with the other silently is how
+    you lose the good one.
+    """
+    out = []
     chapters = [c for c in (d.get("chapters") or []) if isinstance(c, dict)]
     if len(chapters) > 1:
-        marks = [{"start": int(c.get("start_time") or 0), "title": str(c.get("title") or "")} for c in chapters]
-        marks.sort(key=lambda m: m["start"])
-        return close_marks(marks, duration), "chapters"
-    found = parse_tracklist(d.get("description") or "", duration)
-    return (found, "description") if found else ([], "")
+        marks = sorted(({"start": int(c.get("start_time") or 0), "title": str(c.get("title") or "")}
+                        for c in chapters), key=lambda m: m["start"])
+        closed = close_marks(marks, duration)
+        if len(closed) > 1:
+            out.append({"key": "chapters", "marks": closed})
+    desc = parse_tracklist(d.get("description") or "", duration)
+    if len(desc) > 1:
+        out.append({"key": "description", "marks": desc})
+    return out
 
 
 class Destinations:
@@ -564,15 +575,13 @@ def normalize_info(d: dict, url: str) -> dict:
     sides = sorted({short_side(f) for f in formats if f.get("vcodec") not in (None, "none") and short_side(f)}, reverse=True)
     max_h = sides[0] if sides else 0
     heights = [h for h in VIDEO_HEIGHTS if max_h and h < max_h and h >= (sides[-1] if sides else 0) - 1]
-    # where a mix splits into tracks: the site's own markers when it has them,
-    # otherwise whatever the description spells out
+    # every place this mix says where its tracks begin
     duration = int(d.get("duration") or 0)
-    marks, marks_from = marks_from_info(d, duration)
     return {"kind": "video", "title": title, "uploader": uploader, "site": site,
             "duration": duration, "thumbnail": pick_thumbnail(d),
             "url": d.get("webpage_url") or url, "hasVideo": has_video, "hasAudio": has_audio,
             "maxHeight": max_h, "heights": heights,
-            "marks": marks, "marksFrom": marks_from}
+            "sources": sources_from_info(d, duration)}
 
 
 class InfoError(Exception):
@@ -667,12 +676,14 @@ PP_STAGE = {
     "MoveFiles": "finishing", "MoveFilesAfterDownload": "finishing",
 }
 
-# Windows forbids these outright; the rest of the world merely suffers from them
-BAD_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+# Windows forbids both sets; these ones carry meaning, so they become a separator
+BAD_NAME = re.compile(r'[:/\\|?*\x00-\x1f]')
+# these only ever wrap a title — YouTube's own "<Untitled Chapter 1>" among them
+DROP_NAME = re.compile(r'[<>"]')
 
 
 def safe_name(text: str, fallback: str) -> str:
-    name = BAD_NAME.sub("_", text or "").strip(" .")
+    name = BAD_NAME.sub("_", DROP_NAME.sub("", text or "")).strip(" .")
     return name[:110] or fallback
 
 
@@ -1258,8 +1269,9 @@ class Handler(BaseHTTPRequestHandler):
                 found = fetch_comment_tracklist(STATE.engine, url, duration)
             except InfoError as e:
                 return self._json(422, {"error": e.code, "detail": e.detail})
-            return self._json(200, {"marks": found["marks"], "author": found["author"],
-                                    "likes": found["likes"], "scanned": found["scanned"]})
+            return self._json(200, {"scanned": found["scanned"],
+                                    "source": {"key": "comments", "marks": found["marks"],
+                                               "author": found["author"], "likes": found["likes"]}})
 
         if path == "/api/download":
             url = str(body.get("url") or "").strip()

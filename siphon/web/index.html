@@ -98,6 +98,7 @@ button:disabled{cursor:default}
 .choice[aria-checked="true"] .hint{color:var(--muted)}
 .row-label{font-size:13px;color:var(--faint);margin:0 0 6px}
 .marks{list-style:none;margin:0;padding:9px 11px;max-height:228px;overflow:auto;background:var(--ink);border:1px solid var(--line);border-radius:var(--r-sm);display:grid;gap:4px}
+.marks.flash{animation:flash 1.1s ease-out}
 .marks li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:baseline;font-size:12.5px;min-width:0}
 .marks .mno,.marks .mtime{color:var(--faint);font-variant-numeric:tabular-nums}
 .marks .mname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -283,6 +284,7 @@ const T = {
     fromChapters: "from the site's markers", fromDescription: "read from the description",
     fromComments: a => a ? `found in a comment by ${a}` : "found in the comments",
     findTracklist: "Look for a tracklist in the comments", searchingComments: "Reading the comments…",
+    tracklistSource: "Where the tracks come from",
     destinations: "Destinations", destHint: "A folder and the format it is for. Picking one sets both.",
     reading: "Reading link…",
     audio: "Audio", video: "Video", best: "Best", kbps: "kbps",
@@ -344,6 +346,7 @@ const T = {
     fromChapters: "d’après les marqueurs du site", fromDescription: "lu dans la description",
     fromComments: a => a ? `trouvé dans un commentaire de ${a}` : "trouvé dans les commentaires",
     findTracklist: "Chercher une tracklist dans les commentaires", searchingComments: "Lecture des commentaires…",
+    tracklistSource: "D’où viennent les morceaux",
     destinations: "Destinations", destHint: "Un dossier et le format qui va avec. En choisir un règle les deux.",
     reading: "Lecture du lien…",
     audio: "Audio", video: "Vidéo", best: "Max", kbps: "kbps",
@@ -409,7 +412,7 @@ const MP3_RATES = [320, 256, 192, 128];
 const memo = Object.assign({ audio: { format: "mp3", quality: 320 }, video: { format: "mp4", quality: "best" } }, store.get("memo", {}));
 const S = { url: "", info: null, fetching: false, fetchErr: null, actionErr: null, jobs: [], engine: {},
             folder: "", dests: { items: [], active: "" }, split: false, searching: false,
-            offline: false, misses: 0, addedAt: 0 };
+            sourceKey: "", flashMarks: false, offline: false, misses: 0, addedAt: 0 };
 let lookupCtl = null;
 const t = () => T[lang];
 const $ = s => document.querySelector(s);
@@ -510,7 +513,7 @@ async function lookup(raw) {
   urlInput.value = url; syncClear();
   lookupCtl?.abort(); lookupCtl = new AbortController();
   clearActionError();
-  Object.assign(S, { url, info: null, fetchErr: null, fetching: true, split: false, searching: false });
+  Object.assign(S, { url, info: null, fetchErr: null, fetching: true, split: false, searching: false, sourceKey: "" });
   renderFetchMsg(); renderCard();
   try {
     const { info } = await api("/api/info", { url }, lookupCtl.signal, TIMEOUT.info);
@@ -651,6 +654,7 @@ function focusMark(op) {
   if (!el || !op.contains(el)) return null;
   if (el.dataset.group) return `.choice[data-group="${CSS.escape(el.dataset.group)}"][data-v="${CSS.escape(el.dataset.v)}"]`;
   if (el.dataset.dest) return `.choice[data-dest="${CSS.escape(el.dataset.dest)}"]`;
+  if (el.dataset.source) return `.choice[data-source="${CSS.escape(el.dataset.source)}"]`;
   if (el.dataset.toggle) return `[data-toggle="${CSS.escape(el.dataset.toggle)}"]`;
   if (el.dataset.mode) return `.tab[data-mode="${CSS.escape(el.dataset.mode)}"]`;
   return el.id === "dlBtn" ? "#dlBtn" : null;
@@ -671,11 +675,15 @@ function renderOptions() {
   }
   // the cut points are already known, from the site, the description or a comment
   if (canSplit()) {
-    const origin = i.marksFrom === "chapters" ? t().fromChapters
-                 : i.marksFrom === "comments" ? t().fromComments(i.marksAuthor)
-                 : t().fromDescription;
-    rows += `<div class="choices"><button type="button" class="choice" role="switch" aria-checked="${S.split}" data-toggle="split">${icon("list-video", "sm")}${esc(t().splitChapters)}<span class="hint">${esc(`${t().tracksN(i.marks.length)} · ${origin}`)}</span></button></div>`;
-    if (S.split) rows += marksList(i);   // seeing the names is the only way to trust the split
+    const cur = currentSource(), all = sources();
+    rows += `<div class="choices"><button type="button" class="choice" role="switch" aria-checked="${S.split}" data-toggle="split">${icon("list-video", "sm")}${esc(t().splitChapters)}<span class="hint">${esc(t().tracksN(currentMarks().length))}</span></button></div>`;
+    if (S.split) {
+      rows += all.length > 1
+        ? `<div class="choices" role="radiogroup" aria-label="${esc(t().tracklistSource)}">${all.map(s =>
+            `<button type="button" class="choice" role="radio" aria-checked="${s.key === cur.key}" data-source="${esc(s.key)}">${esc(sourceLabel(s))}<span class="hint">${esc(t().tracksN(s.marks.length))}</span></button>`).join("")}</div>`
+        : `<p class="row-label" style="margin:0">${esc(sourceLabel(cur))}</p>`;
+      rows += marksList(i);   // seeing the names is the only way to trust the split
+    }
   }
   if (canSearchComments()) {
     const busy = S.searching;
@@ -699,16 +707,35 @@ function renderOptions() {
         <button type="button" class="link-btn" data-action="choose-folder">${esc(t().change)}</button></div>
     </div>`;
   op.dataset.mode = mode;
+  // a list that silently swapped under you is worse than no list
+  if (S.flashMarks) {
+    S.flashMarks = false;
+    const list = op.querySelector(".marks");
+    if (list) { list.classList.add("flash"); setTimeout(() => list.classList.remove("flash"), 1200); }
+  }
   if (mark) { const back = op.querySelector(mark); if (back && !back.disabled) back.focus({ preventScroll: true }); }
 }
-const canSplit = () => !!(S.info && S.info.kind !== "playlist" && (S.info.marks || []).length > 1);
-// only worth offering on something long enough to actually be a set
-const canSearchComments = () => !!(S.info && S.info.kind !== "playlist" && (S.info.duration || 0) > 600);
+/* A mix can advertise its tracks in several places at once, and they disagree.
+   All of them are kept and shown side by side: replacing one with another
+   behind the user's back is how the good one gets lost. */
+const sources = () => (S.info && S.info.sources) || [];
+const currentSource = () => sources().find(s => s.key === S.sourceKey) || sources()[0] || null;
+const currentMarks = () => (currentSource() || {}).marks || [];
+const canSplit = () => !!(S.info && S.info.kind !== "playlist" && currentMarks().length > 1);
+// only worth offering on something long enough to actually be a set, and only once
+const canSearchComments = () => !!(S.info && S.info.kind !== "playlist"
+  && (S.info.duration || 0) > 600 && !sources().some(s => s.key === "comments"));
+
+function sourceLabel(s) {
+  if (s.key === "chapters") return t().fromChapters;
+  if (s.key === "comments") return t().fromComments(s.author);
+  return t().fromDescription;
+}
 
 /* The exact filenames the split will produce. Without this the toggle is a leap
    of faith: 23 tracks, but named from the markers or just "part 1"? */
 function marksList(i) {
-  const rowsHtml = i.marks.map((m, n) => {
+  const rowsHtml = currentMarks().map((m, n) => {
     const name = m.title || `${i.title} ${n + 1}`;
     return `<li><span class="mno">${String(n + 1).padStart(3, "0")}</span><span class="mname">${esc(name)}</span><span class="mtime">${esc(fmtDur(m.start))}</span></li>`;
   }).join("");
@@ -729,6 +756,8 @@ $("#opts").addEventListener("click", e => {
   if (chip) { selectDest(chip.dataset.dest); return; }
   const tog = e.target.closest("[data-toggle]");
   if (tog) { S.split = !S.split; renderOptions(); return; }
+  const src = e.target.closest("[data-source]");
+  if (src) { S.sourceKey = src.dataset.source; renderOptions(); return; }
   const c = e.target.closest(".choice[data-group]");
   if (c) {
     const g = c.dataset.group, v = c.dataset.v;
@@ -748,7 +777,7 @@ async function startDownload() {
   const body = {
     url: i.url || S.url, mode, title: i.title, thumbnail: i.thumbnail,
     playlist: i.kind === "playlist", count: i.count || 0,
-    destination: S.dests.active, marks: S.split && canSplit() ? S.info.marks : [],
+    destination: S.dests.active, marks: S.split && canSplit() ? currentMarks() : [],
     format: mode === "audio" ? p.format : "mp4",
     quality: mode === "audio" ? (p.format === "mp3" ? p.quality : null) : effectiveQuality()
   };
@@ -995,9 +1024,12 @@ document.addEventListener("click", async e => {
       const d = await api("/api/tracklist", { url: S.info.url || S.url, duration: S.info.duration || 0 },
                           undefined, TIMEOUT.comments);
       if (S.info && S.url === asked) {        // the link may have changed while we read
-        if ((d.marks || []).length > 1) {
-          Object.assign(S.info, { marks: d.marks, marksFrom: "comments", marksAuthor: d.author || "" });
-          S.split = true; clearActionError();
+        const found = d.source || {};
+        if ((found.marks || []).length > 1) {
+          // added beside what was already there, never on top of it
+          S.info.sources = [...sources().filter(s => s.key !== "comments"), found];
+          S.sourceKey = "comments"; S.split = true; S.flashMarks = true;
+          clearActionError();
         } else {
           showActionError({ code: "no_tracklist" });
         }
