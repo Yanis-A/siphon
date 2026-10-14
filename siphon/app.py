@@ -1240,6 +1240,9 @@ class State:
         self.jobs = JobManager(self.engine)
         cfg = read_json(CONFIG_FILE, {})
         self.dests = Destinations(cfg)
+        # the browser extension needs Siphon to still be there when it calls, so
+        # the idle watchdog becomes optional
+        self.keep_alive = bool(cfg.get("keepAlive"))
         self.cfg_lock = threading.Lock()      # config writes arrive from several threads
         self.last_seen = time.time()
         self.server: ThreadingHTTPServer | None = None
@@ -1250,11 +1253,17 @@ class State:
 
     def save_config(self) -> None:
         with self.cfg_lock:
-            write_json(CONFIG_FILE, {"destinations": self.dests.items, "active": self.dests.active})
+            write_json(CONFIG_FILE, {"destinations": self.dests.items, "active": self.dests.active,
+                                     "keepAlive": self.keep_alive})
 
 
 STATE: State | None = None
 URL_RE = re.compile(r"^https?://[^\s/$.?#][^\s]*$", re.I)
+EXT_ORIGIN = re.compile(r"^(moz|chrome)-extension://[a-z0-9@._-]+$", re.I)
+
+
+def is_extension_origin(origin: str) -> bool:
+    return bool(origin) and bool(EXT_ORIGIN.fullmatch(origin))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1275,12 +1284,33 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get("X-Siphon") != "1":
             return False
         origin = self.headers.get("Origin")
-        return origin in (None, f"http://127.0.0.1:{STATE.port}", f"http://localhost:{STATE.port}")
+        if origin in (None, f"http://127.0.0.1:{STATE.port}", f"http://localhost:{STATE.port}"):
+            return True
+        # the browser extension speaks from its own origin. It still has to carry
+        # the header above, which no ordinary page can send cross-origin without
+        # a preflight, and preflights are only answered for these same origins.
+        return is_extension_origin(origin)
+
+    def do_OPTIONS(self):
+        assert STATE
+        origin = self.headers.get("Origin") or ""
+        if not self._host_ok() or not is_extension_origin(origin):
+            return self._send(403, b"Forbidden", "text/plain")
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Siphon")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Access-Control-Max-Age", "600")
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
     def _send(self, code: int, body: bytes, ctype: str, extra: dict | None = None) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        origin = self.headers.get("Origin") or ""
+        if is_extension_origin(origin):
+            self.send_header("Access-Control-Allow-Origin", origin)
         extra = extra or {}
         if "Cache-Control" not in extra:
             self.send_header("Cache-Control", "no-store")
@@ -1325,7 +1355,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"app": APP, "version": VERSION})
         if path == "/api/state":
             return self._json(200, {"app": APP, "version": VERSION, "folder": STATE.folder,
-                                    "destinations": STATE.dests.public(),
+                                    "destinations": STATE.dests.public(), "keepAlive": STATE.keep_alive,
                                     "engine": STATE.engine.snapshot(), "jobs": STATE.jobs.list()})
         if path == "/api/jobs":
             return self._json(200, {"jobs": STATE.jobs.list(), "engine": STATE.engine.snapshot()})
@@ -1463,6 +1493,12 @@ class Handler(BaseHTTPRequestHandler):
                 "duration": body.get("duration"), "count": count, "folder": dest["folder"],
             })
             return self._json(200, {"job": job.public()})
+
+        if path == "/api/settings":
+            if "keepAlive" in body:
+                STATE.keep_alive = bool(body.get("keepAlive"))
+                STATE.save_config()
+            return self._json(200, {"keepAlive": STATE.keep_alive})
 
         if path == "/api/destinations/select":
             if not STATE.dests.select(str(body.get("id") or "")):
@@ -1614,6 +1650,8 @@ def watchdog() -> None:
     assert STATE
     while True:
         time.sleep(15)
+        if STATE.keep_alive:
+            continue
         idle = time.time() - STATE.last_seen
         if idle > IDLE_EXIT_SECONDS and not STATE.jobs.active_count() and not STATE.engine.lock.locked():
             log.info("no open page for %ss, exiting", int(idle))

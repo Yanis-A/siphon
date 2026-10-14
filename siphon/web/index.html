@@ -251,6 +251,10 @@ button:disabled{cursor:default}
         <button class="btn2" id="updateBtn" type="button"><span data-icon="refresh-cw"></span><span data-t="updateEngine"></span></button>
         <p class="note" id="engineNote"></p>
         <div class="sep"></div>
+        <button class="choice" type="button" id="keepAlive" role="switch" aria-checked="false"
+                style="width:100%;justify-content:center"><span data-t="keepAlive"></span></button>
+        <p class="note" style="margin:8px 0 0" data-t="keepAliveHint"></p>
+        <div class="sep"></div>
         <h3 data-t="destinations"></h3>
         <p class="note" style="margin:0 0 10px" data-t="destHint"></p>
         <div class="destlist" id="destList"></div>
@@ -361,6 +365,8 @@ const T = {
     pasteHint: "One per line, in order. For when the artist lists the tracks but gives no times: select the passages by ear, and the names drop into place.",
     applyTitles: "Apply the names",
     destinations: "Destinations", destHint: "A folder and the format it is for. Picking one sets both.",
+    keepAlive: "Keep Siphon running",
+    keepAliveHint: "Siphon normally quits ten minutes after you close its tab. Keep it running for the browser extension, which needs it to answer.",
     reading: "Reading link…",
     audio: "Audio", video: "Video", best: "Best", kbps: "kbps",
     noVideo: "This link has no video",
@@ -434,6 +440,8 @@ const T = {
     pasteHint: "Un par ligne, dans l’ordre. Pour quand l’artiste liste les morceaux sans donner les horaires : tu sélectionnes les passages à l’oreille, et les noms viennent se mettre en face.",
     applyTitles: "Appliquer les noms",
     destinations: "Destinations", destHint: "Un dossier et le format qui va avec. En choisir un règle les deux.",
+    keepAlive: "Garder Siphon actif",
+    keepAliveHint: "Siphon se ferme normalement dix minutes après que tu quittes son onglet. Garde-le actif pour l’extension navigateur, qui a besoin qu’il réponde.",
     reading: "Lecture du lien…",
     audio: "Audio", video: "Vidéo", best: "Max", kbps: "kbps",
     noVideo: "Ce lien ne contient pas de vidéo",
@@ -1046,6 +1054,7 @@ function renderSettings() {
     const c = S.engine.checked;
     note.textContent = t().checked(c ? new Date(c * 1000).toLocaleString(lang === "fr" ? "fr-FR" : "en-GB", { dateStyle: "medium", timeStyle: "short" }) : t().never);
   }
+  $("#keepAlive").setAttribute("aria-checked", String(!!S.keepAlive));
   const many = S.dests.items.length > 1;
   $("#destList").innerHTML = S.dests.items.map(d => `
     <div class="destrow${d.id === S.dests.active ? " on" : ""}">
@@ -1133,6 +1142,17 @@ document.addEventListener("click", async e => {
 $("#settings").addEventListener("click", e => {
   const pick = e.target.closest("[data-dest-pick]");
   if (pick) selectDest(pick.dataset.destPick);
+});
+$("#keepAlive").addEventListener("click", async () => {
+  const next = !S.keepAlive;
+  S.keepAlive = next; renderSettings();          // optimistic; the server confirms
+  try {
+    const d = await api("/api/settings", { keepAlive: next });
+    S.keepAlive = !!d.keepAlive; renderSettings(); clearActionError();
+  } catch (e) {
+    if (aborted(e)) return;
+    S.keepAlive = !next; renderSettings(); showActionError(e);
+  }
 });
 $("#quitBtn").addEventListener("click", async () => {
   if (S.jobs.some(j => j.status === "running" || j.status === "queued") && !confirm(t().quitConfirm)) return;
@@ -1311,6 +1331,9 @@ function tickWave() {
   cancelAnimationFrame(edRaf);
   const step = () => {
     if (!editorOpen()) return;
+    // read the audio clock itself: timeupdate only fires about four times a
+    // second, which zoomed in is a playhead that jumps instead of moving
+    if (edAudio && !edAudio.paused) E.cur = edAudio.currentTime;
     guardEnd();
     if (E.playing) ensureVisible(E.cur);
     drawWave(); drawMini(); renderEdBar();
@@ -1356,6 +1379,13 @@ function fitCanvas(cv) {
 /* Ticks on a scale you can read: the step is picked so labels never crowd,
    whether the view spans two hours or two seconds. */
 const TICK_STEPS = [0.1, 0.25, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600];
+/* Zoomed in we need tenths, but a position stays a position: 21:28.5, never
+   "1288.5s". Minutes do not stop existing because the window got small. */
+function tickLabel(t, span) {
+  if (span >= 10) return fmtClock(t);
+  const m = Math.floor(t / 60), s = t - m * 60;
+  return m ? `${m}:${s.toFixed(1).padStart(4, "0")}` : `${s.toFixed(1)}s`;
+}
 function drawRuler(ctx, w) {
   const span = viewSpan();
   const step = TICK_STEPS.find(s => span / s <= 9) || 3600;
@@ -1369,8 +1399,7 @@ function drawRuler(ctx, w) {
     ctx.fillStyle = cssVar("--line");
     ctx.fillRect(x, RULER_H - 5, 1, 5);
     ctx.fillStyle = cssVar("--faint");
-    const label = span < 10 ? `${t.toFixed(1)}s` : fmtClock(t);
-    if (x < w - 34) ctx.fillText(label, x + 3, 3);
+    if (x < w - 38) ctx.fillText(tickLabel(t, span), x + 3, 3);
   }
 }
 
@@ -1451,7 +1480,8 @@ function renderEdBar() {
   loop.style.color = E.loop ? cssVar("--amber") : "";
   $("#edOut").innerHTML = icon("minus");
   $("#edIn").innerHTML = icon("plus");
-  $("#edTime").textContent = `${fmtClock(E.cur)} / ${fmtClock(E.duration)}`;
+  // tenths once zoomed in, because that is the precision you are working at
+  $("#edTime").textContent = `${tickLabel(E.cur, viewSpan())} / ${fmtClock(E.duration)}`;
   const z = E.duration ? E.duration / viewSpan() : 1;
   $("#edZoom").textContent = z > 1.05 ? `×${z < 10 ? z.toFixed(1) : Math.round(z)}` : "";
   const btn = $("#edExport");
@@ -1719,6 +1749,7 @@ async function loadState() {
     const d = await api("/api/state");
     S.folder = d.folder; S.jobs = d.jobs; S.engine = d.engine || {};
     if (d.destinations) S.dests = d.destinations;
+    S.keepAlive = !!d.keepAlive;
     renderJobs(); renderEngine(); if (S.info) renderOptions();
   } catch (e) {
     // not fatal: poll() is what reports a dead server, but a silent failure here

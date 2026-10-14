@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Siphon",
+  "version": "1.0.0",
+  "description": "Send whatever you are listening to or watching straight to Siphon, without copying a link.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "siphon@local",
+      "strict_min_version": "115.0"
+    }
+  },
+  "permissions": ["activeTab", "contextMenus", "tabs"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": {
+    "scripts": ["background.js"]
+  },
+  "action": {
+    "default_title": "Siphon",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "48": "icon.svg",
+      "96": "icon.svg"
+    }
+  },
+  "icons": {
+    "48": "icon.svg",
+    "96": "icon.svg"
+  }
+}

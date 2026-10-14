@@ -21,6 +21,18 @@ Files go to `Downloads/Siphon` by default. Add more destinations from the settin
 
 Siphon quits on its own 10 minutes after you close its tab (never while something is downloading), or right away with the power button.
 
+## Browser extension
+
+`extension/` holds a Firefox add-on that sends the page you are on to Siphon, so you never copy a link. Click its toolbar button and the panel already shows the current tab and your destinations — one click picks the folder and the format together. There is also a right-click entry for a page, a link or a media element, and the toolbar icon carries a badge while downloads run.
+
+**Load it:** open `about:debugging#/runtime/this-firefox` → *Load Temporary Add-on* → pick `extension/manifest.json`.
+
+That install lasts until you quit Firefox. Mozilla only keeps add-ons installed permanently if they are signed, so for something that survives a restart you have two options: run Firefox Developer Edition or ESR with `xpinstall.signatures.required` set to `false` in `about:config`, or submit the folder to [addons.mozilla.org](https://addons.mozilla.org/developers/) as an unlisted add-on, which signs it for free and hands back an `.xpi` you install normally.
+
+**One setting matters.** Siphon quits ten minutes after you close its tab, and an extension cannot wake a local program. Turn on *Keep Siphon running* in the settings so it is there when you click. Add `Siphon.lnk` to your Startup folder (`Win`+`R`, `shell:startup`) and it will be running from login.
+
+The extension talks only to `127.0.0.1`. The server accepts it by origin and still requires the same header it requires of its own page, so an ordinary web page cannot reach Siphon.
+
 ## Engine
 
 Siphon drives [yt-dlp](https://github.com/yt-dlp/yt-dlp), with [Deno](https://deno.com) to solve YouTube's JavaScript challenges and a bundled [FFmpeg](https://ffmpeg.org) for conversion. Nothing to install by hand.
@@ -44,7 +56,8 @@ Siphon.bat / Siphon.command   launchers
 Siphon.ico                    icon, for a desktop or Start Menu shortcut
 siphon/app.py                 local server (127.0.0.1 only) and download queue
 siphon/setup_env.py           first-run engine install / repair
-siphon/web/index.html         interface
+siphon/web/index.html         interface, including the waveform editor
+extension/                    Firefox add-on: send the current tab to Siphon
 data/                         settings, logs, cache, temp files (created at runtime)
 .venv/                        private Python environment (created at runtime)
 ```
