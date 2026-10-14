@@ -347,6 +347,7 @@ const T = {
     paste: "Paste", clear: "Clear", lookUp: "Look up link", settings: "Settings", quit: "Quit Siphon",
     langGroup: "Language", linkLabel: "Link", modeLabel: "What to download",
     formatLabel: "Format", bitrateLabel: "Bitrate", qualityLabel: "Quality",
+    wavNoCover: "WAV cannot carry cover art. FLAC is lossless too, keeps the cover, and is smaller.",
     destination: "Destination", addDestination: "Add a folder", removeDest: "Remove",
     splitChapters: "Split into tracks", tracksN: n => `${n} tracks`,
     fromChapters: "from the site's markers", fromDescription: "read from the description",
@@ -422,6 +423,7 @@ const T = {
     paste: "Coller", clear: "Effacer", lookUp: "Analyser le lien", settings: "Réglages", quit: "Quitter Siphon",
     langGroup: "Langue", linkLabel: "Lien", modeLabel: "Que télécharger",
     formatLabel: "Format", bitrateLabel: "Débit", qualityLabel: "Qualité",
+    wavNoCover: "Le WAV ne peut pas porter de pochette. Le FLAC est aussi sans perte, la garde, et pèse moins lourd.",
     destination: "Destination", addDestination: "Ajouter un dossier", removeDest: "Retirer",
     splitChapters: "Découper en morceaux", tracksN: n => `${n} morceaux`,
     fromChapters: "d’après les marqueurs du site", fromDescription: "lu dans la description",
@@ -763,6 +765,8 @@ function renderOptions() {
   if (mode === "audio") {
     rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().formatLabel)}">${["mp3", "wav", "flac", "m4a"].map(f => choice("audio", f, f.toUpperCase(), p.format === f)).join("")}</div>`;
     if (p.format === "mp3") rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().bitrateLabel)}">${MP3_RATES.map(b => choice("bitrate", b, `${b} ${t().kbps}`, p.quality === b)).join("")}</div>`;
+    // the format cannot hold one, so say so here rather than let it be discovered
+    if (p.format === "wav") rows += `<p class="row-label" style="margin:0">${esc(t().wavNoCover)}</p>`;
   } else {
     const q = effectiveQuality();
     rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().qualityLabel)}">${videoChoices().map(c => choice("quality", c.v, c.label, q === c.v, c.hint)).join("")}</div>`;
