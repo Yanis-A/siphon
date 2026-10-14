@@ -276,6 +276,7 @@ const T = {
     formatLabel: "Format", bitrateLabel: "Bitrate", qualityLabel: "Quality",
     destination: "Destination", addDestination: "Add a folder", removeDest: "Remove",
     splitChapters: "Split into tracks", tracksN: n => `${n} tracks`,
+    fromChapters: "from the site's markers", fromDescription: "read from the description",
     destinations: "Destinations", destHint: "A folder and the format it is for. Picking one sets both.",
     reading: "Reading link…",
     audio: "Audio", video: "Video", best: "Best", kbps: "kbps",
@@ -333,6 +334,7 @@ const T = {
     formatLabel: "Format", bitrateLabel: "Débit", qualityLabel: "Qualité",
     destination: "Destination", addDestination: "Ajouter un dossier", removeDest: "Retirer",
     splitChapters: "Découper en morceaux", tracksN: n => `${n} morceaux`,
+    fromChapters: "d’après les marqueurs du site", fromDescription: "lu dans la description",
     destinations: "Destinations", destHint: "Un dossier et le format qui va avec. En choisir un règle les deux.",
     reading: "Lecture du lien…",
     audio: "Audio", video: "Vidéo", best: "Max", kbps: "kbps",
@@ -656,9 +658,10 @@ function renderOptions() {
     const q = effectiveQuality();
     rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().qualityLabel)}">${videoChoices().map(c => choice("quality", c.v, c.label, q === c.v, c.hint)).join("")}</div>`;
   }
-  // the site already marked the tracks: no selection needed, just say yes
+  // the cut points are already known, from the site or from the description
   if (canSplit()) {
-    rows += `<div class="choices"><button type="button" class="choice" role="switch" aria-checked="${S.split}" data-toggle="split">${icon("list-video", "sm")}${esc(t().splitChapters)}<span class="hint">${esc(t().tracksN(i.chapters))}</span></button></div>`;
+    const origin = i.marksFrom === "chapters" ? t().fromChapters : t().fromDescription;
+    rows += `<div class="choices"><button type="button" class="choice" role="switch" aria-checked="${S.split}" data-toggle="split">${icon("list-video", "sm")}${esc(t().splitChapters)}<span class="hint">${esc(`${t().tracksN(i.marks.length)} · ${origin}`)}</span></button></div>`;
   }
   const chips = S.dests.items.map(d =>
     `<button type="button" class="choice" role="radio" aria-checked="${d.id === S.dests.active}" data-dest="${esc(d.id)}" title="${esc(d.folder)}">${esc(d.name)}<span class="hint">${esc(badgeText(d))}</span></button>`).join("");
@@ -680,7 +683,7 @@ function renderOptions() {
   op.dataset.mode = mode;
   if (mark) { const back = op.querySelector(mark); if (back && !back.disabled) back.focus({ preventScroll: true }); }
 }
-const canSplit = () => !!(S.info && S.info.kind !== "playlist" && S.info.chapters > 1);
+const canSplit = () => !!(S.info && S.info.kind !== "playlist" && (S.info.marks || []).length > 1);
 function downloadLabel(mode) {
   if (Date.now() - S.addedAt < 1400) return t().added;
   const p = effectivePreset();
@@ -715,7 +718,7 @@ async function startDownload() {
   const body = {
     url: i.url || S.url, mode, title: i.title, thumbnail: i.thumbnail,
     playlist: i.kind === "playlist", count: i.count || 0,
-    destination: S.dests.active, split: S.split && canSplit(),
+    destination: S.dests.active, marks: S.split && canSplit() ? S.info.marks : [],
     format: mode === "audio" ? p.format : "mp4",
     quality: mode === "audio" ? (p.format === "mp3" ? p.quality : null) : effectiveQuality()
   };

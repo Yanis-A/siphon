@@ -170,6 +170,79 @@ def normalize_preset(mode, fmt, quality) -> dict | None:
     return {"mode": mode, "format": fmt, "quality": quality}
 
 
+# ───────────────────────────── tracklists ─────────────────────────────
+
+# a timestamp, not part of a longer run of digits or colons
+TS_RE = re.compile(r"(?<![\d:])(\d{1,3}:[0-5]?\d(?::[0-5]?\d)?)(?![\d:])")
+LEAD_JUNK = re.compile(r"^[\s\-–—~•·:.,|)\]\['\"<>*=_]+")
+TAIL_JUNK = re.compile(r"[\s\-–—~•·:.,|(\[<>*=_]+$")
+GAP = re.compile(r"\s{2,}")
+TRACK_NO = re.compile(r"^(?:\d{1,3}\s*[.)\-–]|\(\d{1,3}\))\s*")
+MAX_MARKS = 300
+
+
+def parse_clock(text: str) -> int:
+    parts = [int(p) for p in text.split(":")]
+    return parts[0] * 60 + parts[1] if len(parts) == 2 else parts[0] * 3600 + parts[1] * 60 + parts[2]
+
+
+def parse_tracklist(text: str, duration: int = 0) -> list[dict]:
+    """Pull `12:34 Artist - Title` lines out of a description or a comment.
+
+    Most mixes never carry real chapter markers: the split points live in the
+    description, or in whichever comment someone took the time to write. One
+    stray timestamp in a sentence is not a tracklist, hence the floor of two
+    and the requirement that they climb.
+    """
+    found: list[tuple[int, str]] = []
+    for raw in (text or "").splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        m = TS_RE.search(line)
+        if not m:
+            continue
+        # cutting the timestamp out of the middle leaves a gap and loose punctuation
+        rest = GAP.sub(" ", f"{line[:m.start()]} {line[m.end():]}".strip())
+        rest = TRACK_NO.sub("", LEAD_JUNK.sub("", rest))
+        title = TAIL_JUNK.sub("", LEAD_JUNK.sub("", rest)).strip()
+        found.append((parse_clock(m.group(1)), title[:150]))
+        if len(found) > MAX_MARKS:
+            break
+    # keep the first title seen for a given second, in reading order
+    seen: dict[int, str] = {}
+    for start, title in found:
+        seen.setdefault(start, title)
+    starts = sorted(seen)
+    if duration:
+        starts = [s for s in starts if s < duration - 1]
+    if len(starts) < 2:
+        return []
+    return close_marks([{"start": s, "title": seen[s]} for s in starts], duration)
+
+
+def close_marks(marks: list[dict], duration: int = 0) -> list[dict]:
+    """Give each mark an end: the next one's start, the last one the duration."""
+    out = []
+    for i, m in enumerate(marks):
+        end = marks[i + 1]["start"] if i + 1 < len(marks) else (duration or 0)
+        if end and end <= m["start"]:
+            continue
+        out.append({"start": int(m["start"]), "end": int(end), "title": str(m.get("title") or "").strip()[:150]})
+    return out
+
+
+def marks_from_info(d: dict, duration: int) -> tuple[list[dict], str]:
+    """Chapter markers when the site has them, the description otherwise."""
+    chapters = [c for c in (d.get("chapters") or []) if isinstance(c, dict)]
+    if len(chapters) > 1:
+        marks = [{"start": int(c.get("start_time") or 0), "title": str(c.get("title") or "")} for c in chapters]
+        marks.sort(key=lambda m: m["start"])
+        return close_marks(marks, duration), "chapters"
+    found = parse_tracklist(d.get("description") or "", duration)
+    return (found, "description") if found else ([], "")
+
+
 class Destinations:
     """Named folders, each carrying the format it exists for.
 
@@ -491,14 +564,15 @@ def normalize_info(d: dict, url: str) -> dict:
     sides = sorted({short_side(f) for f in formats if f.get("vcodec") not in (None, "none") and short_side(f)}, reverse=True)
     max_h = sides[0] if sides else 0
     heights = [h for h in VIDEO_HEIGHTS if max_h and h < max_h and h >= (sides[-1] if sides else 0) - 1]
-    # a DJ set or a long talk often ships its own track markers: when they are
-    # there, the split needs no manual selection at all
-    chapters = [c for c in (d.get("chapters") or []) if isinstance(c, dict) and c.get("title")]
+    # where a mix splits into tracks: the site's own markers when it has them,
+    # otherwise whatever the description spells out
+    duration = int(d.get("duration") or 0)
+    marks, marks_from = marks_from_info(d, duration)
     return {"kind": "video", "title": title, "uploader": uploader, "site": site,
-            "duration": d.get("duration") or 0, "thumbnail": pick_thumbnail(d),
+            "duration": duration, "thumbnail": pick_thumbnail(d),
             "url": d.get("webpage_url") or url, "hasVideo": has_video, "hasAudio": has_audio,
-            "maxHeight": max_h, "heights": heights, "chapters": len(chapters),
-            "chapterTitles": [str(c["title"])[:120] for c in chapters[:60]]}
+            "maxHeight": max_h, "heights": heights,
+            "marks": marks, "marksFrom": marks_from}
 
 
 class InfoError(Exception):
@@ -538,13 +612,33 @@ PP_STAGE = {
     "VideoRemuxer": "converting", "VideoConvertor": "converting",
     "ThumbnailsConvertor": "cover", "EmbedThumbnail": "cover",
     "Metadata": "tagging", "FFmpegMetadata": "tagging",
-    "SplitChapters": "splitting", "FFmpegSplitChapters": "splitting",
     "MoveFiles": "finishing", "MoveFilesAfterDownload": "finishing",
 }
 
-# yt-dlp announces each piece it writes; the split runs inside the postprocessor
-# chain, so these files never pass through --print after_move
-CHAPTER_FILE_RE = re.compile(r"^\[SplitChapters\] Chapter \d+; Destination: (.+)$")
+# Windows forbids these outright; the rest of the world merely suffers from them
+BAD_NAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+
+def safe_name(text: str, fallback: str) -> str:
+    name = BAD_NAME.sub("_", text or "").strip(" .")
+    return name[:110] or fallback
+
+
+def clean_marks(raw) -> list[dict]:
+    """Validate cut points coming from the page."""
+    out = []
+    for m in raw[:MAX_MARKS] if isinstance(raw, list) else []:
+        if not isinstance(m, dict):
+            continue
+        try:
+            start, end = max(0, int(float(m.get("start") or 0))), int(float(m.get("end") or 0))
+        except (TypeError, ValueError):
+            continue
+        if end and end <= start:
+            continue
+        out.append({"start": start, "end": end, "title": str(m.get("title") or "")[:150]})
+    out.sort(key=lambda m: m["start"])
+    return out
 
 
 class Job:
@@ -557,7 +651,8 @@ class Job:
         self.format = params["format"]             # mp3 wav flac m4a | mp4
         self.quality = params.get("quality")       # bitrate | height | "best"
         self.playlist = bool(params.get("playlist"))
-        self.split = bool(params.get("split"))     # cut into one file per chapter
+        self.marks = params.get("marks") or []      # cut points, when the file is to be split
+        self.split = bool(self.marks)
         self.count = int(params.get("count") or 0)
         self.folder = params["folder"]
         self.status = "queued"                     # queued running done error canceled
@@ -644,12 +739,6 @@ def build_job_args(engine: Engine, job: Job) -> list[str]:
         res = "res" if job.quality in (None, "best") else f"res:{job.quality}"
         a += ["-f", "bv*+ba/b", "-S", f"lang,{res},fps,vcodec:h264,acodec:aac",
               "--merge-output-format", "mp4", "--remux-video", "mp4"]
-    if job.split and not job.playlist:
-        # runs last in the postprocessor chain, so the pieces are cut from the
-        # converted, tagged, cover-embedded file, and by stream copy: lossless
-        # and near-instant. The full original is kept alongside the folder.
-        a += ["--split-chapters",
-              "-o", "chapter:%(title)s/%(section_number)03d - %(section_title)s.%(ext)s"]
     return a + ["--", job.url]
 
 
@@ -745,12 +834,6 @@ class JobManager:
                 if line.startswith("SIPHON_"):
                     self._handle(job, line)
                     continue
-                chapter = CHAPTER_FILE_RE.match(line)
-                if chapter:
-                    path = chapter.group(1).strip()
-                    if path and path not in job.files:
-                        job.files.append(path)
-                    continue
                 tail.append(line)
                 tail[:] = tail[-40:]
                 if line.startswith("ERROR:"):
@@ -761,7 +844,12 @@ class JobManager:
             if job.cancel_requested:
                 job.status, job.stage = "canceled", "canceled"
             elif rc == 0 or (job.playlist and job.files):
-                job.status, job.stage, job.percent = "done", "done", 100.0
+                if job.marks and job.files and not job.playlist:
+                    self._split(job)
+                if job.cancel_requested:
+                    job.status, job.stage = "canceled", "canceled"
+                else:
+                    job.status, job.stage, job.percent = "done", "done", 100.0
             else:
                 detail = clean_error(errors or tail)
                 job.status, job.stage = "error", "error"
@@ -778,6 +866,52 @@ class JobManager:
                 self.engine.release()
             remove_tree(job.tmp)
             self.slots.release()
+
+    def _split(self, job: Job) -> None:
+        """Cut the finished file at its marks, into a folder of its own.
+
+        A stream copy, so it is lossless and near-instant, and every piece keeps
+        the cover and the tags the download already wrote. The full file stays
+        where it is: the pieces go in a subfolder beside it.
+        """
+        ff = self.engine.ffmpeg()
+        source = next((f for f in job.files if os.path.isfile(f)), None)
+        if not ff or not source:
+            log.info("job %s: nothing to split", job.id)
+            return
+        src = Path(source)
+        out_dir = Path(job.folder) / safe_name(src.stem, job.id)
+        try:
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            log.warning("job %s: cannot create %s: %s", job.id, out_dir, exc)
+            return
+        job.stage, job.items, job.percent = "splitting", len(job.marks), 0.0
+        pieces = []
+        for n, mark in enumerate(job.marks, 1):
+            if job.cancel_requested:
+                break
+            job.item = n
+            job.percent = 100.0 * (n - 1) / len(job.marks)
+            target = out_dir / f"{n:03d} - {safe_name(mark.get('title'), f'{src.stem} {n}')}{src.suffix}"
+            # -ss and -t ahead of -i are input options: seek, then read only that much
+            args = [ff, "-nostdin", "-loglevel", "error", "-y", "-ss", str(mark["start"])]
+            if mark.get("end"):
+                args += ["-t", str(mark["end"] - mark["start"])]
+            args += ["-i", str(src), "-map", "0", "-dn", "-ignore_unknown", "-c", "copy", str(target)]
+            try:
+                res = run_quiet(args, timeout=900)
+            except subprocess.TimeoutExpired:
+                job.failed += 1
+                continue
+            if res.returncode == 0 and target.is_file() and target.stat().st_size:
+                pieces.append(str(target))
+            else:
+                job.failed += 1
+                log.info("job %s: piece %s failed: %s", job.id, n, (res.stderr or "")[-200:])
+        job.files.extend(pieces)
+        job.percent = 100.0
+        log.info("job %s: %s pieces from %s marks", job.id, len(pieces), len(job.marks))
 
     def _handle(self, job: Job, line: str) -> None:
         tag, _, rest = line.partition(" ")
@@ -1080,7 +1214,7 @@ class Handler(BaseHTTPRequestHandler):
                 "url": url, **preset,
                 "title": str(body.get("title") or "")[:300],
                 "thumbnail": thumb if thumb.startswith(("http://", "https://")) else "",
-                "playlist": bool(body.get("playlist")), "split": bool(body.get("split")),
+                "playlist": bool(body.get("playlist")), "marks": clean_marks(body.get("marks")),
                 "count": count, "folder": dest["folder"],
             })
             return self._json(200, {"job": job.public()})
