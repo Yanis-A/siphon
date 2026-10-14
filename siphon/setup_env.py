@@ -33,7 +33,8 @@ def missing() -> list[str]:
         # binaries must be there too, not just the metadata
         spec = importlib.util.find_spec("imageio_ffmpeg")
         bins = Path(spec.origin).parent / "binaries" if spec and spec.origin else None
-        if not bins or not any(p.name.startswith("ffmpeg") for p in bins.iterdir()):
+        # a Path is always truthy, so the folder has to be probed before iterating it
+        if not bins or not bins.is_dir() or not any(p.name.startswith("ffmpeg") for p in bins.iterdir()):
             out.append("imageio-ffmpeg")
         deno = Path(sys.executable).parent / ("deno.exe" if os.name == "nt" else "deno")
         if not deno.is_file():

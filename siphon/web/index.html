@@ -17,7 +17,7 @@
   --seg:#2C313C;      /* unlit meter segment */
   --text:#ECEEF2;
   --muted:#9097A7;
-  --faint:#646B7B;
+  --faint:#868D9C;    /* 4.7:1 sur --panel : seuil AA, ce ton porte du texte 12px */
   --amber:#F4B740;    /* signal */
   --amber-hi:#FFD27A;
   --on-amber:#1A1B20;
@@ -194,11 +194,11 @@ button:disabled{cursor:default}
     <span class="spacer"></span>
     <div class="top-right">
       <span class="chip-status" id="engineChip" hidden><span data-icon="loader-circle" class="spin-wrap"></span><span data-t="engineUpdating"></span></span>
-      <div class="lang" role="group" aria-label="Language">
+      <div class="lang" role="group" data-al="langGroup">
         <button type="button" data-lang="en">EN</button>
         <button type="button" data-lang="fr">FR</button>
       </div>
-      <button class="icon-btn" id="settingsBtn" type="button" aria-haspopup="dialog" aria-expanded="false" data-title="settings"><span data-icon="settings-2"></span></button>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings" data-title="settings"><span data-icon="settings-2"></span></button>
       <button class="icon-btn" id="quitBtn" type="button" data-title="quit"><span data-icon="power"></span></button>
       <div class="pop" id="settings" role="dialog" aria-labelledby="engineTitle" hidden>
         <h3 id="engineTitle" data-t="engine"></h3>
@@ -220,12 +220,12 @@ button:disabled{cursor:default}
     <form class="deck" id="deck" autocomplete="off">
       <div class="field">
         <span class="lead" data-icon="link"></span>
-        <input id="url" type="text" inputmode="url" spellcheck="false" data-ph="placeholder" aria-label="Link">
+        <input id="url" type="text" inputmode="url" spellcheck="false" data-ph="placeholder" data-al="linkLabel">
         <button class="ghost" id="clearBtn" type="button" hidden data-title="clear"><span data-icon="x"></span></button>
         <button class="ghost" id="pasteBtn" type="button"><span data-icon="clipboard-paste"></span><span class="lbl" data-t="paste"></span></button>
         <button class="go-btn" id="goBtn" type="submit" data-title="lookUp"><span data-icon="arrow-right"></span></button>
       </div>
-      <div class="msg" id="fetchMsg" hidden></div>
+      <div class="msg" id="fetchMsg" role="status" aria-live="polite" hidden></div>
     </form>
 
     <section class="card" id="card" hidden>
@@ -263,6 +263,8 @@ const T = {
   en: {
     placeholder: "Paste a link from YouTube, SoundCloud, Vimeo…",
     paste: "Paste", clear: "Clear", lookUp: "Look up link", settings: "Settings", quit: "Quit Siphon",
+    langGroup: "Language", linkLabel: "Link", modeLabel: "What to download",
+    formatLabel: "Format", bitrateLabel: "Bitrate", qualityLabel: "Quality",
     reading: "Reading link…",
     audio: "Audio", video: "Video", best: "Best", kbps: "kbps",
     noVideo: "This link has no video",
@@ -302,12 +304,18 @@ const T = {
       network: "Couldn't reach the site. Check your connection and retry.",
       timeout: "The site took too long to answer. Retry.",
       engine: "The download engine is broken. Update it in settings.",
+      bad_format: "That format isn't available for this link.",
+      bad_request: "Siphon sent a request the server refused.",
+      not_found: "That download no longer exists.",
+      forbidden: "Siphon refused the request. Reload the page.",
       generic: "Download failed.", server: "Something went wrong in Siphon.", picker: "Couldn't open the folder picker."
     }
   },
   fr: {
     placeholder: "Colle un lien YouTube, SoundCloud, Vimeo…",
     paste: "Coller", clear: "Effacer", lookUp: "Analyser le lien", settings: "Réglages", quit: "Quitter Siphon",
+    langGroup: "Langue", linkLabel: "Lien", modeLabel: "Que télécharger",
+    formatLabel: "Format", bitrateLabel: "Débit", qualityLabel: "Qualité",
     reading: "Lecture du lien…",
     audio: "Audio", video: "Vidéo", best: "Max", kbps: "kbps",
     noVideo: "Ce lien ne contient pas de vidéo",
@@ -347,6 +355,10 @@ const T = {
       network: "Impossible de joindre le site. Vérifie ta connexion et réessaie.",
       timeout: "Le site a mis trop de temps à répondre. Réessaie.",
       engine: "Le moteur de téléchargement est cassé. Mets-le à jour dans les réglages.",
+      bad_format: "Ce format n’est pas disponible pour ce lien.",
+      bad_request: "Siphon a envoyé une requête que le serveur a refusée.",
+      not_found: "Ce téléchargement n’existe plus.",
+      forbidden: "Siphon a refusé la requête. Recharge la page.",
       generic: "Le téléchargement a échoué.", server: "Un problème est survenu dans Siphon.", picker: "Impossible d’ouvrir le sélecteur de dossier."
     }
   }
@@ -359,25 +371,57 @@ const store = {
 };
 let lang = store.get("lang", (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
 const prefs = Object.assign({ mode: "audio", audio: "mp3", bitrate: 320, quality: "best" }, store.get("prefs", {}));
-const S = { url: "", info: null, fetching: false, fetchErr: null, jobs: [], engine: {}, folder: "", offline: false, misses: 0, addedAt: 0 };
+const S = { url: "", info: null, fetching: false, fetchErr: null, actionErr: null, jobs: [], engine: {}, folder: "", offline: false, misses: 0, addedAt: 0 };
 let lookupCtl = null;
 const t = () => T[lang];
 const $ = s => document.querySelector(s);
 
 /* ───────── api ───────── */
-async function api(path, body, signal) {
-  const opts = body === undefined ? { signal } : {
-    method: "POST", signal, body: JSON.stringify(body),
-    headers: { "Content-Type": "application/json", "X-Siphon": "1" }
-  };
-  const res = await fetch(path, opts);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) { const e = new Error(data.error || "server"); e.code = data.error || "server"; e.detail = data.detail || ""; throw e; }
-  return data;
+/* Every request gets a deadline. Without one, a server that accepts the socket
+   but never answers leaves the UI waiting forever: no error, no way back.
+   `info` tracks the server's own 150s lookup timeout; the folder picker gets
+   none, since it waits on a human. */
+const TIMEOUT = { default: 20000, info: 180000, poll: 10000, none: 0 };
+
+/* A signal that also fires on timeout, without relying on AbortSignal.any. */
+function linkSignal(signal, ms) {
+  const ctl = new AbortController();
+  const relay = () => ctl.abort(signal.reason);
+  if (signal) { signal.aborted ? relay() : signal.addEventListener("abort", relay, { once: true }); }
+  const timer = ms ? setTimeout(() => ctl.abort(new DOMException("Timed out", "TimeoutError")), ms) : 0;
+  return [ctl.signal, () => { clearTimeout(timer); signal?.removeEventListener("abort", relay); }];
 }
+
+async function api(path, body, signal, timeout = TIMEOUT.default) {
+  const [sig, release] = linkSignal(signal, timeout);
+  try {
+    const opts = body === undefined ? { signal: sig } : {
+      method: "POST", signal: sig, body: JSON.stringify(body),
+      headers: { "Content-Type": "application/json", "X-Siphon": "1" }
+    };
+    const res = await fetch(path, opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      // the origin guard answers 403 in text/plain, so there is no code to read
+      const code = data.error || (res.status === 403 ? "forbidden" : "server");
+      const e = new Error(code); e.code = code; e.detail = data.detail || "";
+      throw e;
+    }
+    return data;
+  } finally { release(); }
+}
+
+/* An abort is either a deliberate supersede or a deadline; only the second is a
+   real failure worth reporting. */
+const aborted = e => e.name === "AbortError";
+const errCode = e => e.name === "TimeoutError" ? "timeout" : (e.code || "network");
 
 /* ───────── helpers ───────── */
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+/* Thumbnails are whatever yt-dlp scraped off the remote page. The server checks
+   the scheme on the download path (app.py) but not here, so mirror that check
+   rather than hand an arbitrary site-controlled URL to the loader. */
+const safeImg = u => /^https?:\/\//i.test(String(u ?? "")) ? String(u) : "";
 function fmtDur(s) {
   s = Math.round(s || 0); if (!s) return "";
   const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, "0");
@@ -411,8 +455,10 @@ function savePrefs() { store.set("prefs", prefs); }
 function applyLang() {
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-t]").forEach(el => { const v = t()[el.dataset.t]; if (typeof v === "string") el.textContent = v; });
-  document.querySelectorAll("[data-title]").forEach(el => { const v = t()[el.dataset.title]; el.title = v; el.setAttribute("aria-label", v); });
-  document.querySelectorAll("[data-ph]").forEach(el => el.placeholder = t()[el.dataset.ph]);
+  // guarded: an unguarded assignment renders the literal "undefined" on a missing key
+  document.querySelectorAll("[data-title]").forEach(el => { const v = t()[el.dataset.title]; if (typeof v === "string") { el.title = v; el.setAttribute("aria-label", v); } });
+  document.querySelectorAll("[data-al]").forEach(el => { const v = t()[el.dataset.al]; if (typeof v === "string") el.setAttribute("aria-label", v); });
+  document.querySelectorAll("[data-ph]").forEach(el => { const v = t()[el.dataset.ph]; if (typeof v === "string") el.placeholder = v; });
   document.querySelectorAll("[data-lang]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
   renderFetchMsg(); renderCard(); renderJobs(true); renderSettings();
 }
@@ -426,35 +472,53 @@ async function lookup(raw) {
   if (url === S.url && (S.fetching || S.info)) return;
   urlInput.value = url; syncClear();
   lookupCtl?.abort(); lookupCtl = new AbortController();
+  clearActionError();
   Object.assign(S, { url, info: null, fetchErr: null, fetching: true });
   renderFetchMsg(); renderCard();
   try {
-    const { info } = await api("/api/info", { url }, lookupCtl.signal);
+    const { info } = await api("/api/info", { url }, lookupCtl.signal, TIMEOUT.info);
     if (S.url !== url) return;
     S.info = info;
   } catch (e) {
-    if (e.name === "AbortError") return;
+    if (aborted(e)) return;
     if (S.url !== url) return;
-    S.fetchErr = { code: e.code || "network", detail: e.detail || "" };
+    S.fetchErr = { code: errCode(e), detail: e.detail || "" };
   }
   S.fetching = false;
   renderFetchMsg(); renderCard();
 }
 function goHome() {
   lookupCtl?.abort();
+  clearActionError();
   Object.assign(S, { url: "", info: null, fetchErr: null, fetching: false });
-  urlInput.value = ""; syncClear(); closeSettings();
+  urlInput.value = ""; syncClear(); closeSettings(false);
   renderFetchMsg(); renderCard();
   window.scrollTo({ top: 0 });
   urlInput.focus();
 }
 function syncClear() { $("#clearBtn").hidden = !urlInput.value; }
 
+/* Failures from a button (download, cancel, folder picker) are not failures of
+   the link in the field: they get their own slot and expire on their own, so a
+   stale "Download failed." can no longer sit next to a perfectly valid preview. */
+let actionErrTimer = null;
+function showActionError(e) {
+  S.actionErr = { code: errCode(e), detail: e.detail || "" };
+  renderFetchMsg();
+  clearTimeout(actionErrTimer);
+  actionErrTimer = setTimeout(() => { S.actionErr = null; renderFetchMsg(); }, 7000);
+}
+function clearActionError() {
+  clearTimeout(actionErrTimer);
+  if (S.actionErr) { S.actionErr = null; renderFetchMsg(); }
+}
+
 function renderFetchMsg() {
   const box = $("#fetchMsg");
-  if (!S.fetchErr) { box.hidden = true; box.innerHTML = ""; return; }
-  const msg = t().err[S.fetchErr.code] || t().err.generic;
-  box.innerHTML = `${icon("circle-alert")}<div>${esc(msg)}${S.fetchErr.detail ? `<small>${esc(S.fetchErr.detail)}</small>` : ""}</div>`;
+  const err = S.fetchErr || S.actionErr;
+  if (!err) { box.hidden = true; box.innerHTML = ""; return; }
+  const msg = t().err[err.code] || t().err.generic;
+  box.innerHTML = `${icon("circle-alert")}<div>${esc(msg)}${err.detail ? `<small>${esc(err.detail)}</small>` : ""}</div>`;
   box.hidden = false;
 }
 
@@ -473,8 +537,9 @@ function renderCard() {
   if (i.kind === "playlist") facts.push(`<span class="fact">${icon("list-video")}${esc(i.count ? `${t().playlist}, ${t().videosN(i.count)}` : t().playlist)}</span>`);
   if (i.duration) facts.push(`<span class="fact">${fmtDur(i.duration)}</span>`);
   if (i.site) facts.push(`<span class="fact">${esc(siteName(i.site))}</span>`);
+  const thumb = safeImg(i.thumbnail);
   pv.innerHTML = `
-    <div class="thumb${i.thumbnail ? "" : " empty"}">${i.thumbnail ? `<img src="${esc(i.thumbnail)}" alt="" referrerpolicy="no-referrer">` : icon(i.hasVideo ? "clapperboard" : "music")}</div>
+    <div class="thumb${thumb ? "" : " empty"}">${thumb ? `<img src="${esc(thumb)}" alt="" referrerpolicy="no-referrer">` : icon(i.hasVideo ? "clapperboard" : "music")}</div>
     <div class="pmeta">
       <h2 class="ptitle" title="${esc(i.title)}">${esc(i.title)}</h2>
       ${i.uploader ? `<p class="psub">${esc(i.uploader)}</p>` : ""}
@@ -488,8 +553,9 @@ function renderCard() {
 
 function videoChoices() {
   const i = S.info;
-  const bestLabel = i.maxHeight ? `${t().best}<span class="hint">${i.maxHeight}p</span>` : t().best;
-  return [{ v: "best", label: bestLabel }, ...i.heights.map(h => ({ v: h, label: `${h}p` }))];
+  // label and hint stay separate so both can be escaped on the way into the DOM
+  return [{ v: "best", label: t().best, hint: i.maxHeight ? `${i.maxHeight}p` : "" },
+          ...i.heights.map(h => ({ v: h, label: `${h}p`, hint: "" }))];
 }
 function effectiveQuality() {
   const vals = videoChoices().map(c => c.v);
@@ -498,23 +564,33 @@ function effectiveQuality() {
   const lower = vals.filter(v => v !== "best" && v <= prefs.quality);
   return lower.length ? lower[0] : "best";
 }
+/* A wholesale innerHTML rebuild removes the control that was just activated, so
+   keyboard focus falls back to <body>. Note it first, restore it after. */
+function focusMark(op) {
+  const el = document.activeElement;
+  if (!el || !op.contains(el)) return null;
+  if (el.dataset.group) return `.choice[data-group="${CSS.escape(el.dataset.group)}"][data-v="${CSS.escape(el.dataset.v)}"]`;
+  if (el.dataset.mode) return `.tab[data-mode="${CSS.escape(el.dataset.mode)}"]`;
+  return el.id === "dlBtn" ? "#dlBtn" : null;
+}
 function renderOptions() {
   const i = S.info, op = $("#opts");
+  const mark = focusMark(op);
   const canVideo = i.hasVideo !== false, canAudio = i.hasAudio !== false;
   let mode = prefs.mode;
   if (mode === "video" && !canVideo) mode = "audio";
   if (mode === "audio" && !canAudio) mode = "video";
-  const choice = (group, v, label, on) => `<button type="button" class="choice" role="radio" aria-checked="${on}" data-group="${group}" data-v="${v}">${label}</button>`;
+  const choice = (group, v, label, on, hint) => `<button type="button" class="choice" role="radio" aria-checked="${on}" data-group="${esc(group)}" data-v="${esc(v)}">${esc(label)}${hint ? `<span class="hint">${esc(hint)}</span>` : ""}</button>`;
   let rows = "";
   if (mode === "audio") {
-    rows += `<div class="choices" role="radiogroup" aria-label="Format">${["mp3", "wav", "flac", "m4a"].map(f => choice("audio", f, f.toUpperCase(), prefs.audio === f)).join("")}</div>`;
-    if (prefs.audio === "mp3") rows += `<div class="choices" role="radiogroup" aria-label="Bitrate">${[320, 256, 192, 128].map(b => choice("bitrate", b, `${b} ${t().kbps}`, prefs.bitrate === b)).join("")}</div>`;
+    rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().formatLabel)}">${["mp3", "wav", "flac", "m4a"].map(f => choice("audio", f, f.toUpperCase(), prefs.audio === f)).join("")}</div>`;
+    if (prefs.audio === "mp3") rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().bitrateLabel)}">${[320, 256, 192, 128].map(b => choice("bitrate", b, `${b} ${t().kbps}`, prefs.bitrate === b)).join("")}</div>`;
   } else {
     const q = effectiveQuality();
-    rows += `<div class="choices" role="radiogroup" aria-label="Quality">${videoChoices().map(c => choice("quality", c.v, c.label, q === c.v)).join("")}</div>`;
+    rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().qualityLabel)}">${videoChoices().map(c => choice("quality", c.v, c.label, q === c.v, c.hint)).join("")}</div>`;
   }
   op.innerHTML = `
-    <div class="tabs" role="tablist">
+    <div class="tabs" role="tablist" aria-label="${esc(t().modeLabel)}">
       <button type="button" class="tab" role="tab" data-mode="audio" aria-selected="${mode === "audio"}" ${canAudio ? "" : "disabled"}>${icon("music", "sm")}${esc(t().audio)}</button>
       <button type="button" class="tab" role="tab" data-mode="video" aria-selected="${mode === "video"}" ${canVideo ? "" : `disabled title="${esc(t().noVideo)}"`}>${icon("clapperboard", "sm")}${esc(t().video)}</button>
     </div>
@@ -523,6 +599,7 @@ function renderOptions() {
     <div class="dest"><span>${esc(t().savingTo)}</span><span class="path" id="folderPath" title="${esc(S.folder)}"><bdi>${esc(S.folder)}</bdi></span>
       <button type="button" class="link-btn" data-action="choose-folder">${esc(t().change)}</button></div>`;
   op.dataset.mode = mode;
+  if (mark) { const back = op.querySelector(mark); if (back && !back.disabled) back.focus({ preventScroll: true }); }
 }
 function downloadLabel(mode) {
   if (Date.now() - S.addedAt < 1400) return t().added;
@@ -563,7 +640,7 @@ async function startDownload() {
     renderJobs(); renderOptions(); schedulePoll(300);
     setTimeout(() => { if (S.info) renderOptions(); }, 1500);
   } catch (e) {
-    S.fetchErr = { code: e.code || "server", detail: e.detail || "" }; renderFetchMsg();
+    if (!aborted(e)) showActionError(e);
     btn.disabled = false;
   }
 }
@@ -580,7 +657,8 @@ function jobStatus(j) {
   return s[j.stage] || s.processing;
 }
 function rowHtml(j) {
-  return `<div class="jthumb">${j.thumbnail ? `<img src="${esc(j.thumbnail)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon(j.mode === "audio" ? "music" : "clapperboard")}</div>
+  const thumb = safeImg(j.thumbnail);
+  return `<div class="jthumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon(j.mode === "audio" ? "music" : "clapperboard")}</div>
     <div class="jbody"><div class="jtitle" title="${esc(j.title)}">${esc(j.title)}</div><div class="jline"></div><div class="meter"><i></i></div><div class="jdetail" hidden></div></div>
     <div class="jact"></div>`;
 }
@@ -618,7 +696,15 @@ function updateRow(el, j, force) {
     if (j.single) acts.push(["save", "download", t().saveCopy]);
   }
   if (j.status === "error" || j.status === "canceled") acts.push(["retry", "rotate-ccw", t().retry]);
-  el.querySelector(".jact").innerHTML = acts.map(([a, ic, label]) => `<button type="button" class="icon-btn" data-job-action="${a}" title="${esc(label)}" aria-label="${esc(label)}">${icon(ic)}</button>`).join("");
+  // This runs about twice a second while downloading. Rebuilding the buttons
+  // every time destroys a focused or hovered Cancel, so only touch them when
+  // the set of actions really changes.
+  const jact = el.querySelector(".jact");
+  const actKey = `${lang}|${acts.map(a => a[0]).join(",")}`;
+  if (jact._key !== actKey) {
+    jact._key = actKey;
+    jact.innerHTML = acts.map(([a, ic, label]) => `<button type="button" class="icon-btn" data-job-action="${a}" title="${esc(label)}" aria-label="${esc(label)}">${icon(ic)}</button>`).join("");
+  }
 }
 function renderJobs(force) {
   const list = $("#list");
@@ -656,24 +742,49 @@ $("#list").addEventListener("click", async e => {
       const { job } = await api("/api/download", { url: j.url, mode: j.mode, format: j.format, quality: j.quality, title: j.title, thumbnail: j.thumbnail, playlist: j.playlist, count: j.items });
       S.jobs = [job, ...S.jobs]; S.flashId = job.id; renderJobs(); schedulePoll(300);
     }
-  } catch {}
+    clearActionError();
+  } catch (err) {
+    if (!aborted(err)) showActionError(err);   // a swallowed failure looks like a dead button
+  }
 });
-$("#clearDone").addEventListener("click", async () => { try { const d = await api("/api/jobs/clear", {}); S.jobs = d.jobs; renderJobs(); } catch {} });
+$("#clearDone").addEventListener("click", async () => {
+  try { const d = await api("/api/jobs/clear", {}); S.jobs = d.jobs; renderJobs(); clearActionError(); }
+  catch (err) { if (!aborted(err)) showActionError(err); }
+});
 
 /* ───────── polling ───────── */
-let pollTimer = null;
-function schedulePoll(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms); }
+let pollTimer = null, pollCtl = null;
+/* Scheduling a poll also drops the one in flight. Its answer describes a state
+   older than whatever just triggered the reschedule, and poll() replaces the
+   whole job list, so letting it land would erase a row added a moment ago. */
+function schedulePoll(ms) {
+  clearTimeout(pollTimer);
+  pollCtl?.abort();
+  pollCtl = null;
+  pollTimer = setTimeout(poll, ms);
+}
 async function poll() {
-  let next = 4000;
+  let next = 4000, fresh = false;
+  const ctl = new AbortController();
+  pollCtl = ctl;
   try {
-    const d = await api("/api/jobs");
-    S.jobs = d.jobs; S.engine = d.engine || {}; S.misses = 0;
+    const d = await api("/api/jobs", undefined, ctl.signal, TIMEOUT.poll);
+    S.jobs = d.jobs; S.engine = d.engine || {}; S.misses = 0; fresh = true;
     if (S.offline) { S.offline = false; $("#closed").hidden = true; loadState(); }
-    renderJobs(); renderEngine();
     if (S.jobs.some(j => j.status === "running" || j.status === "queued") || S.engine.status === "updating") next = 600;
-  } catch {
+  } catch (e) {
+    if (aborted(e)) return;   // superseded: schedulePoll already armed the next one
     if (++S.misses >= 3 && !S.offline) { S.offline = true; $("#closed").hidden = false; }
     next = 3000;
+  } finally {
+    if (pollCtl === ctl) pollCtl = null;
+  }
+  /* Rendering stays outside the try: a broken renderer is not a dead server, and
+     counting it as one raised the "Siphon is closed" overlay on a healthy one.
+     It must not kill the loop either, hence its own catch. */
+  if (fresh) {
+    try { renderJobs(); renderEngine(); }
+    catch (e) { console.error("render failed", e); }
   }
   schedulePoll(next);
 }
@@ -702,10 +813,27 @@ function renderSettings() {
   $("#folderPath2").innerHTML = `<bdi>${esc(S.folder)}</bdi>`;
   $("#folderPath2").title = S.folder;
 }
-function openSettings() { renderSettings(); $("#settings").hidden = false; $("#settingsBtn").setAttribute("aria-expanded", "true"); }
-function closeSettings() { $("#settings").hidden = true; $("#settingsBtn").setAttribute("aria-expanded", "false"); S.engineMsg = ""; }
-$("#settingsBtn").addEventListener("click", e => { e.stopPropagation(); $("#settings").hidden ? openSettings() : closeSettings(); });
-document.addEventListener("click", e => { if (!$("#settings").hidden && !e.target.closest("#settings") && !e.target.closest("#settingsBtn")) closeSettings(); });
+let settingsReturn = null;
+function openSettings() {
+  renderSettings();
+  $("#settings").hidden = false;
+  $("#settingsBtn").setAttribute("aria-expanded", "true");
+  settingsReturn = document.activeElement;
+  $("#updateBtn").focus({ preventScroll: true });
+}
+/* `restore` is true when the user closed it deliberately (Escape, the toggle),
+   so focus returns where it came from rather than being dropped on <body>.
+   An outside click must not steal focus from whatever was just clicked. */
+function closeSettings(restore) {
+  const wasOpen = !$("#settings").hidden;
+  $("#settings").hidden = true;
+  $("#settingsBtn").setAttribute("aria-expanded", "false");
+  S.engineMsg = "";
+  if (wasOpen && restore && settingsReturn && document.contains(settingsReturn)) settingsReturn.focus({ preventScroll: true });
+  settingsReturn = null;
+}
+$("#settingsBtn").addEventListener("click", e => { e.stopPropagation(); $("#settings").hidden ? openSettings() : closeSettings(true); });
+document.addEventListener("click", e => { if (!$("#settings").hidden && !e.target.closest("#settings") && !e.target.closest("#settingsBtn")) closeSettings(false); });
 $("#updateBtn").addEventListener("click", async () => {
   S.engineMsg = "";
   try { const d = await api("/api/engine/update", {}); S.engine = d.engine; }
@@ -714,15 +842,25 @@ $("#updateBtn").addEventListener("click", async () => {
 });
 
 /* ───────── folder + global actions ───────── */
+let choosing = false;
 document.addEventListener("click", async e => {
   const a = e.target.closest("[data-action]"); if (!a) return;
+  const action = a.dataset.action;
+  // the picker is a native modal on the server side: a second click opens a second one
+  if (action === "choose-folder" && choosing) return;
   try {
-    if (a.dataset.action === "open-folder") await api("/api/folder/open", {});
-    if (a.dataset.action === "choose-folder") {
-      const d = await api("/api/folder/choose", { title: t().folder });
-      S.folder = d.folder; if (S.info) renderOptions(); renderSettings();
+    if (action === "open-folder") { await api("/api/folder/open", {}); clearActionError(); }
+    if (action === "choose-folder") {
+      choosing = true; a.disabled = true;
+      // no deadline here: this call waits on a human in a native dialog
+      const d = await api("/api/folder/choose", { title: t().folder }, undefined, TIMEOUT.none);
+      S.folder = d.folder; if (S.info) renderOptions(); renderSettings(); clearActionError();
     }
-  } catch (err) { if (err.code === "picker") { S.fetchErr = { code: "picker", detail: err.detail }; renderFetchMsg(); } }
+  } catch (err) {
+    if (!aborted(err)) showActionError(err);
+  } finally {
+    if (action === "choose-folder") { choosing = false; a.disabled = false; }
+  }
 });
 $("#quitBtn").addEventListener("click", async () => {
   if (S.jobs.some(j => j.status === "running" || j.status === "queued") && !confirm(t().quitConfirm)) return;
@@ -752,13 +890,16 @@ document.addEventListener("paste", e => {
   const url = normalizeUrl(e.clipboardData?.getData("text") || "");
   if (url) { e.preventDefault(); lookup(url); }
 });
-document.addEventListener("keydown", e => { if (e.key === "Escape") closeSettings(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeSettings(true); });
 const deck = $("#deck");
 ["dragenter", "dragover"].forEach(ev => document.addEventListener(ev, e => { if ([...(e.dataTransfer?.types || [])].some(x => x === "text/uri-list" || x === "text/plain")) { e.preventDefault(); deck.classList.add("drop"); } }));
 ["dragleave", "drop"].forEach(ev => document.addEventListener(ev, e => { if (ev === "dragleave" && e.relatedTarget) return; deck.classList.remove("drop"); }));
 document.addEventListener("drop", e => {
+  // unconditional: otherwise dropping an actual media file navigates the browser
+  // to that file and the whole session is gone
+  e.preventDefault();
   const text = e.dataTransfer?.getData("text/uri-list") || e.dataTransfer?.getData("text/plain") || "";
-  if (normalizeUrl(text)) { e.preventDefault(); lookup(text.split(/\r?\n/).find(l => normalizeUrl(l)) || text); }
+  if (normalizeUrl(text)) lookup(text.split(/\r?\n/).find(l => normalizeUrl(l)) || text);
 });
 
 /* ───────── boot ───────── */
@@ -767,7 +908,11 @@ async function loadState() {
     const d = await api("/api/state");
     S.folder = d.folder; S.jobs = d.jobs; S.engine = d.engine || {};
     renderJobs(); renderEngine(); if (S.info) renderOptions();
-  } catch {}
+  } catch (e) {
+    // not fatal: poll() is what reports a dead server, but a silent failure here
+    // left the folder path blank with no explanation at all
+    if (!aborted(e)) console.error("could not load state", e);
+  }
 }
 applyLang();
 loadState().then(() => schedulePoll(600));

@@ -39,6 +39,7 @@ The raw error from yt-dlp is shown under each failed download, and the full log 
 
 ```
 Siphon.bat / Siphon.command   launchers
+Siphon.ico                    icon, for a desktop or Start Menu shortcut
 siphon/app.py                 local server (127.0.0.1 only) and download queue
 siphon/setup_env.py           first-run engine install / repair
 siphon/web/index.html         interface

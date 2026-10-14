@@ -460,14 +460,27 @@ class Job:
         self.tmp = TMP / self.id
         self.cancel_requested = False
         self._split = False
+        self._size = 0
+        self._sized_at = 0.0
 
-    def public(self) -> dict:
-        size = 0
+    def total_size(self) -> int:
+        """Bytes on disk, cached: public() runs on every poll, for every job."""
+        if self._sized_at and self.status in ("done", "error", "canceled"):
+            return self._size          # a finished job never grows again
+        now = time.time()
+        if now - self._sized_at < 1.0:
+            return self._size
+        total = 0
         for f in self.files:
             try:
-                size += os.path.getsize(f)
+                total += os.path.getsize(f)
             except OSError:
                 pass
+        self._size, self._sized_at = total, now
+        return total
+
+    def public(self) -> dict:
+        size = self.total_size()
         return {"id": self.id, "url": self.url, "title": self.title, "thumbnail": self.thumbnail,
                 "mode": self.mode, "format": self.format, "quality": self.quality, "playlist": self.playlist,
                 "status": self.status, "stage": self.stage, "percent": round(self.percent, 1),
