@@ -719,18 +719,28 @@ def parse_range(header: str | None, size: int) -> tuple[int, int] | None:
     return start, end
 
 
-def compute_peaks(ff: str, path: str, buckets: int = PEAK_BUCKETS) -> tuple[list[int], float]:
+def compute_peaks(ff: str, path: str, buckets: int = PEAK_BUCKETS,
+                  offset: float = 0.0, span: float = 0.0) -> tuple[list[int], float]:
     """One amplitude per column of the waveform, 0-255.
 
     Decoding two hours of audio in the browser would cost gigabytes of memory;
     FFmpeg hands back a mono 1 kHz stream instead — a few megabytes, a few
     seconds — which is far more shape than a 1800-pixel drawing can show.
     """
-    args = [ff, "-nostdin", "-loglevel", "error", "-i", path, "-map", "0:a:0",
-            "-ac", "1", "-ar", str(PEAK_RATE), "-f", "s16le", "-"]
+    args = [ff, "-nostdin", "-loglevel", "error"]
+    if offset > 0:
+        args += ["-ss", f"{offset:.3f}"]        # ahead of -i, so the seek is cheap
+    if span > 0:
+        args += ["-t", f"{span:.3f}"]
+    args += ["-i", path, "-map", "0:a:0", "-ac", "1", "-ar", str(PEAK_RATE), "-f", "s16le", "-"]
     proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             stdin=subprocess.DEVNULL, env=child_env(), creationflags=NO_WINDOW)
-    window = PEAK_RATE // ENVELOPE_HZ
+    # zoomed in, 20 points a second would be coarser than the pixels asking for
+    # them, so the envelope follows the span it is being asked to describe
+    env_hz = ENVELOPE_HZ
+    if span > 0:
+        env_hz = max(ENVELOPE_HZ, min(PEAK_RATE // 4, int(buckets / span * 2) + 1))
+    window = max(1, PEAK_RATE // env_hz)
     envelope: list[int] = []
     residual, carry = array.array("h"), b""
     deadline = time.time() + 900
@@ -772,7 +782,7 @@ def compute_peaks(ff: str, path: str, buckets: int = PEAK_BUCKETS) -> tuple[list
         seg = envelope[a:max(b, a + 1)]
         out.append(min(255, max(seg) * 255 // 32768) if seg else 0)
     # the decoded sample count is the duration, and it beats whatever the site claimed
-    return out, len(envelope) / ENVELOPE_HZ
+    return out, len(envelope) / env_hz
 
 
 def clean_marks(raw) -> list[dict]:
@@ -1494,10 +1504,23 @@ class Handler(BaseHTTPRequestHandler):
             src = job.source_file() if job else None
             if not job or not src:
                 return self._json(404, {"error": "not_found"})
-            if not job.peaks:                       # kept: the decode is the expensive part
-                ff = STATE.engine.ffmpeg()
-                if not ff:
-                    return self._json(500, {"error": "engine"})
+            ff = STATE.engine.ffmpeg()
+            if not ff:
+                return self._json(500, {"error": "engine"})
+            try:
+                start = max(0.0, float(body.get("start") or 0))
+                end = float(body.get("end") or 0)
+                buckets = max(200, min(4000, int(body.get("buckets") or PEAK_BUCKETS)))
+            except (TypeError, ValueError):
+                return self._json(400, {"error": "bad_request"})
+            if end > start:                 # a zoomed window: traced fresh, never cached
+                try:
+                    peaks, _ = compute_peaks(ff, src, buckets, start, end - start)
+                except Exception as exc:
+                    log.warning("window peaks for %s failed: %s", job.id, exc)
+                    return self._json(422, {"error": "convert", "detail": str(exc)[:200]})
+                return self._json(200, {"peaks": peaks, "start": start, "end": end})
+            if not job.peaks:               # whole file: kept, the decode is the costly part
                 try:
                     job.peaks, seconds = compute_peaks(ff, src)
                 except Exception as exc:
