@@ -160,6 +160,10 @@ button:disabled{cursor:default}
 .ed-bar{display:flex;align-items:center;gap:10px}
 .ed-bar .spacer{flex:1}
 .ed-time{font-size:13.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ed-hint{font-size:12.5px;color:var(--faint);text-align:right}
+.ed-hint kbd{font:inherit;font-weight:600;color:var(--muted);background:var(--raised);border-radius:3px;padding:1px 5px}
+.wavebox.resizing canvas{cursor:col-resize}
+.wavebox.moving canvas{cursor:grabbing}
 .ed-list{display:grid;gap:4px;max-height:320px;overflow:auto}
 .ed-row{display:grid;grid-template-columns:auto auto 1fr auto;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-sm);padding:5px 8px}
 .ed-row.on{border-color:var(--amber)}
@@ -295,7 +299,7 @@ button:disabled{cursor:default}
         <button class="icon-btn" type="button" id="edPlay" data-title="play"></button>
         <span class="ed-time" id="edTime"></span>
         <span class="spacer"></span>
-        <button class="ghost" type="button" id="edAdd"><span data-t="cutHere"></span></button>
+        <span class="ed-hint" data-t="dragHint"></span>
       </div>
       <div class="ed-list" id="edList"></div>
       <details class="ed-paste">
@@ -335,12 +339,14 @@ const T = {
     fromComments: a => a ? `found in a comment by ${a}` : "found in the comments",
     findTracklist: "Look for a tracklist in the comments", searchingComments: "Reading the comments…",
     tracklistSource: "Where the tracks come from",
-    editSplit: "Split by ear", back: "Back", play: "Play", playFrom: "Play from here",
-    cutHere: "Cut here", trackName: "Track name", removeMark: "Remove this cut",
+    editSplit: "Select passages", back: "Back", play: "Play", playFrom: "Play from here",
+    trackName: "Name this passage", removeMark: "Remove this selection",
     tracing: "Tracing the waveform…",
-    exportN: n => n === 1 ? "Export 1 track" : `Export ${n} tracks`,
+    dragHint: "Drag across the wave to select a passage · [ and ] set its edges at the playhead",
+    noRegions: "Drag across the wave to select your first passage.",
+    exportN: n => n === 1 ? "Export 1 passage" : `Export ${n} passages`,
     pasteTitles: "Paste a list of titles",
-    pasteHint: "One per line, in order. For when the artist lists the tracks but gives no times: place the cuts by ear, and the names drop into place.",
+    pasteHint: "One per line, in order. For when the artist lists the tracks but gives no times: select the passages by ear, and the names drop into place.",
     applyTitles: "Apply the names",
     destinations: "Destinations", destHint: "A folder and the format it is for. Picking one sets both.",
     reading: "Reading link…",
@@ -404,12 +410,14 @@ const T = {
     fromComments: a => a ? `trouvé dans un commentaire de ${a}` : "trouvé dans les commentaires",
     findTracklist: "Chercher une tracklist dans les commentaires", searchingComments: "Lecture des commentaires…",
     tracklistSource: "D’où viennent les morceaux",
-    editSplit: "Découper à l’oreille", back: "Retour", play: "Lecture", playFrom: "Lire à partir d’ici",
-    cutHere: "Couper ici", trackName: "Nom du morceau", removeMark: "Retirer cette coupe",
+    editSplit: "Sélectionner des passages", back: "Retour", play: "Lecture", playFrom: "Lire à partir d’ici",
+    trackName: "Nom de ce passage", removeMark: "Retirer cette sélection",
     tracing: "Tracé de la waveform…",
-    exportN: n => n === 1 ? "Exporter 1 morceau" : `Exporter ${n} morceaux`,
+    dragHint: "Glisse sur le tracé pour sélectionner un passage · [ et ] calent les bords sur la lecture",
+    noRegions: "Glisse sur le tracé pour sélectionner ton premier passage.",
+    exportN: n => n === 1 ? "Exporter 1 passage" : `Exporter ${n} passages`,
     pasteTitles: "Coller une liste de titres",
-    pasteHint: "Un par ligne, dans l’ordre. Pour quand l’artiste liste les morceaux sans donner les horaires : tu places les coupes à l’oreille, et les noms viennent se mettre en face.",
+    pasteHint: "Un par ligne, dans l’ordre. Pour quand l’artiste liste les morceaux sans donner les horaires : tu sélectionnes les passages à l’oreille, et les noms viennent se mettre en face.",
     applyTitles: "Appliquer les noms",
     destinations: "Destinations", destHint: "Un dossier et le format qui va avec. En choisir un règle les deux.",
     reading: "Lecture du lien…",
@@ -1153,10 +1161,13 @@ document.addEventListener("drop", e => {
 });
 
 /* ───────── waveform editor ───────── */
-/* The overview comes from the drawing, the precision from playback: a cut is
-   placed at the playhead rather than by hitting a pixel. On a two-hour set one
-   pixel is seven seconds, so dragging alone could never be accurate enough. */
-const E = { job: null, peaks: [], duration: 0, marks: [], cur: 0, playing: false, sel: -1, drag: -1 };
+/* Passages, not cut points. You drag across the wave and that span becomes one
+   extract; everything you did not select is simply ignored. Boundary markers
+   would force the whole file into adjacent tracks, which is not what pulling
+   three good moments out of a two-hour set looks like.
+   Dragging gives the rough span, the playhead and [ ] give the precision: at
+   this zoom one pixel is several seconds, so the ear has to finish the job. */
+const E = { job: null, peaks: [], duration: 0, regions: [], cur: 0, playing: false, sel: -1, drag: null };
 let edAudio = null, edRaf = 0;
 
 const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#888";
@@ -1164,7 +1175,7 @@ const editorOpen = () => !$("#editor").hidden;
 const fmtClock = s => fmtDur(Math.max(0, Math.round(s || 0))) || "0:00";
 
 async function openEditor(job) {
-  Object.assign(E, { job, peaks: [], marks: [], duration: job.duration || 0, cur: 0, playing: false, sel: -1, drag: -1 });
+  Object.assign(E, { job, peaks: [], regions: [], duration: job.duration || 0, cur: 0, playing: false, sel: -1, drag: null });
   $("#editor").hidden = false;
   $("#deck").hidden = true; $("#card").hidden = true; $("#dls").hidden = true;
   $("#edName").textContent = job.files[0] || job.title;
@@ -1176,7 +1187,7 @@ async function openEditor(job) {
   if (!edAudio) {
     edAudio = new Audio();
     edAudio.preload = "metadata";
-    edAudio.addEventListener("timeupdate", () => { if (E.drag < 0) E.cur = edAudio.currentTime; });
+    edAudio.addEventListener("timeupdate", () => { if (!E.drag) E.cur = edAudio.currentTime; });
     edAudio.addEventListener("play", () => { E.playing = true; renderEdBar(); tickWave(); });
     edAudio.addEventListener("pause", () => { E.playing = false; renderEdBar(); });
     edAudio.addEventListener("ended", () => { E.playing = false; renderEdBar(); });
@@ -1190,10 +1201,11 @@ async function openEditor(job) {
     E.duration = d.duration || E.duration;
     if (d.name) $("#edName").textContent = d.name;
     $("#edNote").hidden = true;
-    // start from whatever the download already knew about this file
-    E.marks = (job.marks || []).length
-      ? job.marks.map(m => ({ start: m.start, title: m.title || "" }))
-      : [{ start: 0, title: "" }];
+    // a file downloaded with a tracklist opens with those passages already laid out;
+    // otherwise it opens empty, because an empty wave is the invitation to drag
+    E.regions = (job.marks || [])
+      .filter(m => m.end > m.start)
+      .map(m => ({ start: m.start, end: m.end, title: m.title || "" }));
     renderEditor();
   } catch (e) {
     if (aborted(e)) return;
@@ -1205,7 +1217,7 @@ async function openEditor(job) {
 function closeEditor() {
   if (edAudio) { edAudio.pause(); edAudio.removeAttribute("src"); edAudio.load(); }
   cancelAnimationFrame(edRaf);
-  Object.assign(E, { job: null, peaks: [], marks: [], playing: false, sel: -1, drag: -1 });
+  Object.assign(E, { job: null, peaks: [], regions: [], playing: false, sel: -1, drag: null });
   $("#editor").hidden = true;
   $("#deck").hidden = false;
   renderCard(); renderJobs(true);
@@ -1240,13 +1252,26 @@ function drawWave() {
     ctx.fillStyle = x <= head ? lit : dim;
     ctx.fillRect(x, mid - bh / 2, 1, bh);
   }
-  ctx.font = `600 11px ${cssVar("--font")}`;
-  ctx.textBaseline = "bottom";
-  E.marks.forEach((m, n) => {
-    const x = (m.start / dur) * w;
-    ctx.fillStyle = n === E.sel ? cssVar("--amber-hi") : cssVar("--text");
-    ctx.fillRect(x, 0, n === E.sel ? 2 : 1, h);
-    ctx.fillText(String(n + 1).padStart(2, "0"), Math.min(w - 18, x + 4), h - 4);
+  const amber = cssVar("--amber"), hi = cssVar("--amber-hi");
+  ctx.font = `700 11px ${cssVar("--font")}`;
+  ctx.textBaseline = "top";
+  E.regions.forEach((g, n) => {
+    const x1 = (g.start / dur) * w, x2 = (g.end / dur) * w;
+    const on = n === E.sel;
+    ctx.globalAlpha = on ? 0.30 : 0.15;         // the body tints, it must not hide the wave
+    ctx.fillStyle = amber;
+    ctx.fillRect(x1, 0, Math.max(2, x2 - x1), h);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = on ? hi : amber;            // the handles are what you grab
+    ctx.fillRect(x1, 0, on ? 3 : 2, h);
+    ctx.fillRect(x2 - (on ? 3 : 2), 0, on ? 3 : 2, h);
+    const label = String(n + 1).padStart(2, "0");
+    if (x2 - x1 > 22) {
+      ctx.fillStyle = cssVar("--on-amber");
+      ctx.fillRect(x1 + (on ? 3 : 2), 0, 19, 15);
+      ctx.fillStyle = on ? hi : amber;
+      ctx.fillText(label, x1 + (on ? 7 : 6), 3);
+    }
   });
   ctx.fillStyle = cssVar("--err");
   ctx.fillRect(head - 1, 0, 2, h);
@@ -1256,19 +1281,35 @@ function renderEdBar() {
   $("#edPlay").innerHTML = icon(E.playing ? "pause" : "play");
   $("#edTime").textContent = `${fmtClock(E.cur)} / ${fmtClock(E.duration)}`;
   const btn = $("#edExport");
-  btn.innerHTML = `${icon("scissors")}<span>${esc(t().exportN(E.marks.length))}</span>`;
-  btn.disabled = !E.marks.length || !E.peaks.length;
+  btn.innerHTML = `${icon("scissors")}<span>${esc(t().exportN(E.regions.length))}</span>`;
+  btn.disabled = !E.regions.length || !E.peaks.length;
 }
 
 function renderEdList() {
-  $("#edList").innerHTML = E.marks.map((m, n) => `
+  const box = $("#edList");
+  if (!E.regions.length) {
+    box.innerHTML = `<p class="row-label" style="margin:0">${esc(t().noRegions)}</p>`;
+    return;
+  }
+  box.innerHTML = E.regions.map((g, n) => `
     <div class="ed-row${n === E.sel ? " on" : ""}" data-mark="${n}">
       <span class="eno">${String(n + 1).padStart(3, "0")}</span>
       <button type="button" class="icon-btn" data-mark-act="play" title="${esc(t().playFrom)}" aria-label="${esc(t().playFrom)}">${icon("play")}</button>
-      <input type="text" value="${esc(m.title)}" placeholder="${esc(t().trackName)}" data-mark-name aria-label="${esc(t().trackName)}">
-      <span class="acts"><span class="ets">${esc(fmtClock(m.start))}</span>
+      <input type="text" value="${esc(g.title)}" placeholder="${esc(t().trackName)}" data-mark-name aria-label="${esc(t().trackName)}">
+      <span class="acts"><span class="ets">${esc(spanLabel(g))}</span>
         <button type="button" class="icon-btn" data-mark-act="del" title="${esc(t().removeMark)}" aria-label="${esc(t().removeMark)}">${icon("x")}</button></span>
     </div>`).join("");
+}
+const spanLabel = g => `${fmtClock(g.start)} – ${fmtClock(g.end)}`;
+
+/* Called on every pointer move while dragging: rewriting the whole list there
+   would throw away the caret of whatever name is being typed. */
+function renderEdTimes() {
+  $("#edList").querySelectorAll("[data-mark]").forEach(row => {
+    const g = E.regions[Number(row.dataset.mark)];
+    const cell = row.querySelector(".ets");
+    if (g && cell) cell.textContent = spanLabel(g);
+  });
 }
 
 function renderEditor() { drawWave(); renderEdBar(); renderEdList(); }
@@ -1279,56 +1320,88 @@ function seekTo(s) {
   drawWave(); renderEdBar();
 }
 
-function addMark(at) {
-  at = Math.max(0, Math.min(at, E.duration || at));
-  if (E.marks.some(m => Math.abs(m.start - at) < 0.5)) return;   // no stack of cuts on one spot
-  const fresh = { start: at, title: "" };
-  E.marks.push(fresh);
-  E.marks.sort((a, b) => a.start - b.start);
-  E.sel = E.marks.indexOf(fresh);
-  renderEditor();
-}
-
 const waveEl = $("#wave");
+const MIN_SPAN = 0.5, EDGE_PX = 7, DRAG_PX = 4;
 const xToTime = x => {
   const r = waveEl.getBoundingClientRect();
   return r.width ? Math.max(0, Math.min(E.duration, (x - r.left) / r.width * E.duration)) : 0;
 };
-function markNear(clientX) {
+
+/* What sits under the pointer: an edge to resize, a body to move, or bare wave
+   where a drag starts a new selection. Later regions win, so the one you just
+   drew stays reachable when they overlap. */
+function hitTest(clientX) {
   const r = waveEl.getBoundingClientRect();
-  let best = -1, bestD = 7;
-  E.marks.forEach((m, n) => {
-    const d = Math.abs(r.left + (m.start / (E.duration || 1)) * r.width - clientX);
-    if (d <= bestD) { bestD = d; best = n; }
-  });
-  return best;
+  const px = s => r.left + (s / (E.duration || 1)) * r.width;
+  for (let n = E.regions.length - 1; n >= 0; n--) {
+    const g = E.regions[n];
+    if (Math.abs(px(g.start) - clientX) <= EDGE_PX) return { mode: "edgeL", idx: n };
+    if (Math.abs(px(g.end) - clientX) <= EDGE_PX) return { mode: "edgeR", idx: n };
+  }
+  for (let n = E.regions.length - 1; n >= 0; n--) {
+    const g = E.regions[n];
+    if (clientX > px(g.start) && clientX < px(g.end)) return { mode: "inside", idx: n };
+  }
+  return { mode: "empty", idx: -1 };
 }
 
 waveEl.addEventListener("pointerdown", e => {
   if (!E.peaks.length) return;
-  const hit = markNear(e.clientX);
-  if (hit >= 0) {
-    E.drag = hit; E.sel = hit;
-    try { waveEl.setPointerCapture(e.pointerId); } catch {}
-    $("#waveBox").classList.add("grabbing");
-    renderEditor();
-  } else {
-    seekTo(xToTime(e.clientX));
-  }
-});
-waveEl.addEventListener("pointermove", e => {
-  if (E.drag < 0) return;
-  E.marks[E.drag].start = xToTime(e.clientX);
+  const hit = hitTest(e.clientX);
+  E.drag = { ...hit, startX: e.clientX, startT: xToTime(e.clientX), moved: false,
+             orig: hit.idx >= 0 ? { ...E.regions[hit.idx] } : null };
+  if (hit.idx >= 0) { E.sel = hit.idx; renderEdList(); }
+  try { waveEl.setPointerCapture(e.pointerId); } catch {}
+  $("#waveBox").classList.add(hit.mode === "inside" ? "moving" : "resizing");
   drawWave();
 });
+
+waveEl.addEventListener("pointermove", e => {
+  const d = E.drag;
+  if (!d) return;
+  if (!d.moved && Math.abs(e.clientX - d.startX) < DRAG_PX) return;   // a click is not a drag
+  d.moved = true;
+  const at = xToTime(e.clientX);
+  if (d.mode === "empty") {               // first movement on bare wave: born here
+    E.regions.push({ start: Math.min(d.startT, at), end: Math.max(d.startT, at), title: "" });
+    d.idx = E.regions.length - 1;
+    d.mode = "drawing";
+    E.sel = d.idx;
+    renderEdList();
+  }
+  const g = E.regions[d.idx];
+  if (!g) return;
+  if (d.mode === "drawing") {
+    g.start = Math.min(d.startT, at);
+    g.end = Math.max(d.startT, at);
+  } else if (d.mode === "edgeL") {
+    g.start = Math.min(at, g.end - MIN_SPAN);
+  } else if (d.mode === "edgeR") {
+    g.end = Math.max(at, g.start + MIN_SPAN);
+  } else if (d.mode === "inside") {
+    const len = d.orig.end - d.orig.start;
+    g.start = Math.max(0, Math.min(d.orig.start + (at - d.startT), (E.duration || len) - len));
+    g.end = g.start + len;
+  }
+  drawWave(); renderEdTimes();
+});
+
 function endDrag(e) {
-  if (E.drag < 0) return;
-  const moved = E.marks[E.drag];
-  E.marks.sort((a, b) => a.start - b.start);
-  E.sel = E.marks.indexOf(moved);
-  E.drag = -1;
-  $("#waveBox").classList.remove("grabbing");
+  const d = E.drag;
+  if (!d) return;
+  E.drag = null;
   try { waveEl.releasePointerCapture(e.pointerId); } catch {}
+  $("#waveBox").classList.remove("moving", "resizing");
+  if (!d.moved) {                         // a plain click: listen from there
+    E.sel = d.idx;
+    seekTo(d.startT);
+    renderEdList();
+    return;
+  }
+  const kept = E.regions[d.idx];
+  E.regions = E.regions.filter(g => g.end - g.start >= MIN_SPAN);   // drop the accidental flicks
+  E.regions.sort((a, b) => a.start - b.start);
+  E.sel = E.regions.indexOf(kept);
   renderEditor();
 }
 waveEl.addEventListener("pointerup", endDrag);
@@ -1339,21 +1412,19 @@ $("#edPlay").addEventListener("click", () => {
   if (!edAudio || !E.peaks.length) return;
   edAudio.paused ? edAudio.play().catch(() => {}) : edAudio.pause();
 });
-$("#edAdd").addEventListener("click", () => addMark(E.cur));
-
 $("#edList").addEventListener("click", e => {
   const row = e.target.closest("[data-mark]"); if (!row) return;
   const n = Number(row.dataset.mark);
   const act = e.target.closest("[data-mark-act]")?.dataset.markAct;
-  if (act === "del") { E.marks.splice(n, 1); E.sel = -1; renderEditor(); return; }
-  if (act === "play") { E.sel = n; seekTo(E.marks[n].start); edAudio?.play().catch(() => {}); renderEditor(); return; }
+  if (act === "del") { E.regions.splice(n, 1); E.sel = -1; renderEditor(); return; }
+  if (act === "play") { E.sel = n; seekTo(E.regions[n].start); edAudio?.play().catch(() => {}); renderEditor(); return; }
   // clicking the field itself must not rebuild the list, or the caret is lost
   if (e.target.matches("[data-mark-name]")) { E.sel = n; drawWave(); return; }
   E.sel = n; renderEditor();
 });
 $("#edList").addEventListener("input", e => {
   const row = e.target.closest("[data-mark]");
-  if (row && e.target.matches("[data-mark-name]")) E.marks[Number(row.dataset.mark)].title = e.target.value;
+  if (row && e.target.matches("[data-mark-name]")) E.regions[Number(row.dataset.mark)].title = e.target.value;
 });
 
 /* For the case where an artist lists the titles but no timecodes: paste the
@@ -1361,19 +1432,18 @@ $("#edList").addEventListener("input", e => {
 $("#edApplyTitles").addEventListener("click", () => {
   const lines = $("#edTitles").value.split(/\r?\n/).map(s => s.trim().replace(/^\d{1,3}\s*[.)\-–]\s*/, "")).filter(Boolean);
   if (!lines.length) return;
-  lines.forEach((line, n) => { if (E.marks[n]) E.marks[n].title = line; });
+  lines.forEach((line, n) => { if (E.regions[n]) E.regions[n].title = line; });
   renderEditor();
 });
 
 $("#edExport").addEventListener("click", async () => {
   const job = E.job;
-  if (!job || !E.marks.length) return;
-  const sorted = [...E.marks].sort((a, b) => a.start - b.start);
-  const marks = sorted.map((m, n) => ({
-    start: Math.round(m.start),
-    end: Math.round(n + 1 < sorted.length ? sorted[n + 1].start : (E.duration || 0)),
-    title: m.title || ""
-  })).filter(m => !m.end || m.end > m.start);
+  if (!job || !E.regions.length) return;
+  // each selection stands alone: what lies between them is simply not exported
+  const marks = [...E.regions]
+    .sort((a, b) => a.start - b.start)
+    .map(g => ({ start: Math.round(g.start), end: Math.round(g.end), title: g.title || "" }))
+    .filter(m => m.end > m.start);
   if (!marks.length) return;
   const btn = $("#edExport");
   btn.disabled = true;
@@ -1390,7 +1460,18 @@ window.addEventListener("resize", () => { if (editorOpen()) drawWave(); });
 document.addEventListener("keydown", e => {
   if (!editorOpen() || e.target.matches("input,textarea,summary")) return;
   if (e.key === " ") { e.preventDefault(); $("#edPlay").click(); }
-  else if (e.key === "m" || e.key === "M") { e.preventDefault(); addMark(E.cur); }
+  // the ear finishing what the drag roughed out
+  else if (e.key === "[" && E.regions[E.sel]) {
+    e.preventDefault();
+    const g = E.regions[E.sel];
+    g.start = Math.min(E.cur, g.end - MIN_SPAN);
+    renderEditor();
+  } else if (e.key === "]" && E.regions[E.sel]) {
+    e.preventDefault();
+    const g = E.regions[E.sel];
+    g.end = Math.max(E.cur, g.start + MIN_SPAN);
+    renderEditor();
+  }
 });
 
 /* ───────── boot ───────── */
