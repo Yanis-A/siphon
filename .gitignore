@@ -1,0 +1,7 @@
+.venv/
+data/
+__pycache__/
+*.pyc
+
+# archive de distribution (le source est dans le depot)
+Siphon.zip

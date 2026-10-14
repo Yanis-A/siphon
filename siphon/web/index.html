@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Siphon</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23F4B740'/%3E%3Cg fill='none' stroke='%2318191F' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M16 6.5v13'/%3E%3Cpath d='m10.5 14.5 5.5 5.5 5.5-5.5'/%3E%3Cpath d='M9.5 25.5h13'/%3E%3C/g%3E%3C/svg%3E">
+<style>
+@font-face{font-family:"Archivo";font-style:normal;font-display:swap;font-weight:100 900;font-stretch:62% 125%;src:url(/fonts/archivo-latin.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD}
+@font-face{font-family:"Archivo";font-style:normal;font-display:swap;font-weight:100 900;font-stretch:62% 125%;src:url(/fonts/archivo-latin-ext.woff2) format("woff2");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
+
+:root{
+  --ink:#181B22;      /* page */
+  --panel:#20242D;    /* surfaces */
+  --raised:#292E39;   /* controls */
+  --line:#343A48;     /* hairlines */
+  --seg:#2C313C;      /* unlit meter segment */
+  --text:#ECEEF2;
+  --muted:#9097A7;
+  --faint:#646B7B;
+  --amber:#F4B740;    /* signal */
+  --amber-hi:#FFD27A;
+  --on-amber:#1A1B20;
+  --err:#FF7B6E;
+  --r-sm:6px; --r-md:10px; --r-lg:14px;
+  --font:"Archivo","Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--ink);color:var(--text);font:400 15px/1.5 var(--font);-webkit-font-smoothing:antialiased;min-height:100vh}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;border:0;background:none;padding:0}
+button:disabled{cursor:default}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px;border-radius:var(--r-sm)}
+.i{width:18px;height:18px;flex:none;display:block}
+.i.sm{width:16px;height:16px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+[hidden]{display:none !important}
+
+.wrap{max-width:760px;margin:0 auto;padding:28px 24px 72px}
+
+/* header */
+.top{display:flex;align-items:center;gap:12px;margin-bottom:36px}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 6px 4px 0;border-radius:var(--r-sm)}
+.mark{width:28px;height:28px;border-radius:8px;background:var(--amber);color:var(--on-amber);display:grid;place-items:center}
+.mark .i{width:18px;height:18px;stroke-width:2.4}
+.word{font-weight:800;font-stretch:125%;font-size:19px;letter-spacing:.01em;line-height:1}
+.top .spacer{flex:1}
+.chip-status{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted);padding:5px 10px;border:1px solid var(--line);border-radius:999px}
+.lang{display:flex;border:1px solid var(--line);border-radius:var(--r-sm);overflow:hidden}
+.lang button{font-size:12.5px;font-weight:600;padding:5px 9px;color:var(--muted)}
+.lang button[aria-pressed="true"]{background:var(--raised);color:var(--text)}
+.icon-btn{width:34px;height:34px;display:grid;place-items:center;border-radius:var(--r-sm);color:var(--muted)}
+.icon-btn:hover{background:var(--raised);color:var(--text)}
+
+/* link input */
+.deck{position:relative}
+.field{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:6px 6px 6px 16px;transition:border-color .15s}
+.field:focus-within{border-color:#4A5163}
+.field .lead{color:var(--faint)}
+.field input{flex:1;min-width:0;background:none;border:0;outline:0;padding:12px 4px;font-size:16px}
+.field input::placeholder{color:var(--faint)}
+.ghost{display:flex;align-items:center;gap:7px;height:40px;padding:0 12px;border-radius:var(--r-md);color:var(--muted);font-size:14px;font-weight:500}
+.ghost:hover{background:var(--raised);color:var(--text)}
+.go-btn{width:44px;height:44px;border-radius:var(--r-md);background:var(--amber);color:var(--on-amber);display:grid;place-items:center}
+.go-btn:hover{background:var(--amber-hi)}
+.go-btn:disabled{background:var(--raised);color:var(--faint)}
+.drop .field{border-color:var(--amber);border-style:dashed}
+.msg{margin:10px 2px 0;font-size:14px;color:var(--err);display:flex;gap:8px;align-items:flex-start}
+.msg .i{margin-top:2px}
+.msg small{display:block;color:var(--faint);font-size:12.5px;margin-top:2px;word-break:break-word}
+
+/* preview + options */
+.card{margin-top:16px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg)}
+.preview{display:grid;grid-template-columns:208px 1fr;gap:18px;padding:16px}
+.thumb{aspect-ratio:16/9;border-radius:var(--r-md);overflow:hidden;background:var(--raised);display:grid;place-items:center;color:var(--faint);position:relative}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.pmeta{min-width:0;display:flex;flex-direction:column;justify-content:center;gap:6px}
+.ptitle{margin:0;font-size:17px;font-weight:600;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
+.psub{margin:0;color:var(--muted);font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.facts{display:flex;flex-wrap:wrap;gap:6px;margin-top:2px}
+.fact{font-size:12.5px;color:var(--muted);background:var(--raised);border-radius:var(--r-sm);padding:2px 8px;display:flex;align-items:center;gap:5px;font-variant-numeric:tabular-nums}
+.fact .i{width:14px;height:14px}
+.skel{background:linear-gradient(90deg,var(--raised) 0 40%,#323846 50%,var(--raised) 60% 100%);background-size:250% 100%;animation:skel 1.3s linear infinite;border-radius:var(--r-sm)}
+@keyframes skel{from{background-position:100% 0}to{background-position:-150% 0}}
+
+.opts{border-top:1px solid var(--line);padding:16px;display:grid;gap:14px}
+.tabs{display:inline-flex;background:var(--ink);border:1px solid var(--line);border-radius:var(--r-md);padding:3px;gap:2px;justify-self:start}
+.tab{display:flex;align-items:center;gap:8px;padding:7px 16px;border-radius:7px;font-weight:600;font-size:14px;color:var(--muted)}
+.tab[aria-selected="true"]{background:var(--raised);color:var(--text)}
+.tab:disabled{opacity:.4}
+.choices{display:flex;flex-wrap:wrap;gap:6px}
+.choice{padding:7px 13px;border-radius:var(--r-sm);border:1px solid var(--line);font-size:14px;font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums}
+.choice:hover{color:var(--text);border-color:#465063}
+.choice[aria-checked="true"]{border-color:var(--amber);color:var(--text);box-shadow:inset 0 0 0 1px var(--amber)}
+.choice .hint{color:var(--faint);font-weight:400;margin-left:4px}
+.choice[aria-checked="true"] .hint{color:var(--muted)}
+.row-label{font-size:13px;color:var(--faint);margin:0 0 6px}
+.dl{height:48px;border-radius:var(--r-md);background:var(--amber);color:var(--on-amber);font-weight:700;font-size:15px;display:flex;align-items:center;justify-content:center;gap:9px;transition:background .15s}
+.dl:hover{background:var(--amber-hi)}
+.dl:disabled{background:var(--raised);color:var(--muted)}
+.dest{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--faint);min-width:0}
+.dest .path{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left;min-width:0;flex:0 1 auto}
+.link-btn{color:var(--muted);font-size:13px;font-weight:600;padding:2px 4px;border-radius:4px;white-space:nowrap}
+.link-btn:hover{color:var(--text)}
+
+/* downloads */
+.dls{margin-top:40px}
+.dls-head{display:flex;align-items:center;gap:6px;margin-bottom:10px}
+.dls-head h2{margin:0;font-size:15px;font-weight:700;flex:1}
+.list{display:grid;gap:8px}
+.job{display:grid;grid-template-columns:80px 1fr auto;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-md);padding:10px 10px 10px 10px}
+.job.flash{animation:flash 1.1s ease-out}
+@keyframes flash{from{border-color:var(--amber)}to{border-color:var(--line)}}
+.jthumb{width:80px;aspect-ratio:16/9;border-radius:var(--r-sm);overflow:hidden;background:var(--raised);display:grid;place-items:center;color:var(--faint)}
+.jthumb img{width:100%;height:100%;object-fit:cover;display:block}
+.jbody{min-width:0;display:grid;gap:5px}
+.jtitle{font-weight:600;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jline{display:flex;flex-wrap:wrap;align-items:center;gap:2px 10px;font-size:13px;color:var(--muted);min-width:0;font-variant-numeric:tabular-nums}
+.jline>*{white-space:nowrap}
+.job.error .jline>.jstat{white-space:normal;flex:1 1 200px}
+.badge{font-size:11.5px;font-weight:700;letter-spacing:.02em;color:var(--text);background:var(--raised);padding:1px 7px;border-radius:4px;display:flex;align-items:center;gap:4px;flex:none}
+.badge .i{width:13px;height:13px}
+.jstat{display:flex;align-items:center;gap:6px;min-width:0}
+.jstat .i{width:15px;height:15px}
+.job.error .jstat{align-items:flex-start}
+.job.error .jstat .i{margin-top:2px}
+.jline .num{color:var(--text)}
+.jline .dim{color:var(--faint)}
+.job.done .jstat{color:var(--text)}
+.job.done .jstat .i{color:var(--amber)}
+.job.error .jstat{color:var(--err)}
+.jdetail{font-size:12px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jact{display:flex;gap:2px}
+
+/* the meter: segmented like a channel level meter */
+.meter{--p:0;height:7px;position:relative;background:var(--seg);
+  -webkit-mask:repeating-linear-gradient(90deg,#000 0 5px,transparent 5px 7px);
+          mask:repeating-linear-gradient(90deg,#000 0 5px,transparent 5px 7px)}
+.meter>i{position:absolute;inset:0 auto 0 0;width:calc(var(--p) * 1%);width:round(down,calc(var(--p) * 1%),7px);background:var(--amber);transition:width .3s linear}
+.meter.work>i{width:100%;background:linear-gradient(90deg,var(--amber) 0 35%,var(--amber-hi) 50%,var(--amber) 65% 100%);background-size:300% 100%;animation:sweep 1.6s linear infinite}
+.meter.wait>i{width:0}
+@keyframes sweep{from{background-position:100% 0}to{background-position:-200% 0}}
+
+/* popover */
+.pop{position:absolute;right:0;top:44px;width:320px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;z-index:5;box-shadow:0 12px 32px rgba(0,0,0,.35)}
+.pop h3{margin:0 0 10px;font-size:14px;font-weight:700}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13.5px;margin:0 0 14px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.pop .note{font-size:12.5px;color:var(--faint);margin:10px 0 0}
+.pop .note.err{color:var(--err)}
+.pop .sep{height:1px;background:var(--line);margin:16px 0}
+.btn2{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:38px;border-radius:var(--r-md);background:var(--raised);font-weight:600;font-size:14px}
+.btn2:hover:not(:disabled){background:#333948}
+.btn2:disabled{color:var(--faint)}
+.top-right{position:relative;display:flex;align-items:center;gap:6px}
+
+/* closed overlay */
+.closed{position:fixed;inset:0;background:rgba(24,27,34,.94);display:grid;place-items:center;z-index:20;padding:24px}
+.closed-box{max-width:360px;text-align:center}
+.closed-box h2{margin:16px 0 6px;font-size:20px;font-weight:700}
+.closed-box p{margin:0 0 20px;color:var(--muted)}
+.closed-box .mark{margin:0 auto;width:44px;height:44px;border-radius:12px}
+.closed-box .mark .i{width:26px;height:26px}
+.closed-box .btn2{width:auto;padding:0 18px;display:inline-flex}
+
+.spin{animation:spin .9s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+@media (max-width:600px){
+  .wrap{padding:20px 16px 56px}
+  .top{margin-bottom:24px}
+  .preview{grid-template-columns:1fr;gap:12px}
+  .thumb.empty{aspect-ratio:auto;height:64px}
+  .job{grid-template-columns:56px 1fr auto;gap:10px}
+  .jthumb{width:56px}
+  .ghost .lbl{display:none}
+  .pop{width:min(320px,calc(100vw - 32px))}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <button class="brand" id="home" type="button">
+      <span class="mark" data-icon="arrow-down-to-line"></span>
+      <span class="word">Siphon</span>
+    </button>
+    <span class="spacer"></span>
+    <div class="top-right">
+      <span class="chip-status" id="engineChip" hidden><span data-icon="loader-circle" class="spin-wrap"></span><span data-t="engineUpdating"></span></span>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="en">EN</button>
+        <button type="button" data-lang="fr">FR</button>
+      </div>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-haspopup="dialog" aria-expanded="false" data-title="settings"><span data-icon="settings-2"></span></button>
+      <button class="icon-btn" id="quitBtn" type="button" data-title="quit"><span data-icon="power"></span></button>
+      <div class="pop" id="settings" role="dialog" aria-labelledby="engineTitle" hidden>
+        <h3 id="engineTitle" data-t="engine"></h3>
+        <dl class="kv" id="versions"></dl>
+        <button class="btn2" id="updateBtn" type="button"><span data-icon="refresh-cw"></span><span data-t="updateEngine"></span></button>
+        <p class="note" id="engineNote"></p>
+        <div class="sep"></div>
+        <h3 data-t="folder"></h3>
+        <div class="dest"><span class="path" id="folderPath2"></span></div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn2" type="button" data-action="choose-folder"><span data-t="change"></span></button>
+          <button class="btn2" type="button" data-action="open-folder"><span data-t="openFolder"></span></button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <form class="deck" id="deck" autocomplete="off">
+      <div class="field">
+        <span class="lead" data-icon="link"></span>
+        <input id="url" type="text" inputmode="url" spellcheck="false" data-ph="placeholder" aria-label="Link">
+        <button class="ghost" id="clearBtn" type="button" hidden data-title="clear"><span data-icon="x"></span></button>
+        <button class="ghost" id="pasteBtn" type="button"><span data-icon="clipboard-paste"></span><span class="lbl" data-t="paste"></span></button>
+        <button class="go-btn" id="goBtn" type="submit" data-title="lookUp"><span data-icon="arrow-right"></span></button>
+      </div>
+      <div class="msg" id="fetchMsg" hidden></div>
+    </form>
+
+    <section class="card" id="card" hidden>
+      <div class="preview" id="preview"></div>
+      <div class="opts" id="opts"></div>
+    </section>
+
+    <section class="dls" id="dls" hidden>
+      <div class="dls-head">
+        <h2 data-t="downloads"></h2>
+        <button class="link-btn" type="button" id="clearDone" hidden data-t="clearFinished"></button>
+        <button class="icon-btn" type="button" data-action="open-folder" data-title="openFolder"><span data-icon="folder-open"></span></button>
+      </div>
+      <div class="list" id="list"></div>
+    </section>
+  </main>
+</div>
+
+<div class="closed" id="closed" hidden>
+  <div class="closed-box">
+    <span class="mark" data-icon="arrow-down-to-line"></span>
+    <h2 data-t="closedTitle"></h2>
+    <p data-t="closedText"></p>
+    <button class="btn2" type="button" id="reconnect"><span data-icon="refresh-cw"></span><span data-t="reconnect"></span></button>
+  </div>
+</div>
+
+<script>
+"use strict";
+const ICONS = {"clipboard-paste":"<path d=\"M11 14h10\"/> <path d=\"M16 4h2a2 2 0 0 1 2 2v1.344\"/> <path d=\"m17 18 4-4-4-4\"/> <path d=\"M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113\"/> <rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/>","x":"<path d=\"M18 6 6 18\"/> <path d=\"m6 6 12 12\"/>","arrow-right":"<path d=\"M5 12h14\"/> <path d=\"m12 5 7 7-7 7\"/>","music":"<path d=\"M9 18V5l12-2v13\"/> <circle cx=\"6\" cy=\"18\" r=\"3\"/> <circle cx=\"18\" cy=\"16\" r=\"3\"/>","clapperboard":"<path d=\"m12.296 3.464 3.02 3.956\"/> <path d=\"M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3z\"/> <path d=\"M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/> <path d=\"m6.18 5.276 3.1 3.899\"/>","list-video":"<path d=\"M21 5H3\"/> <path d=\"M10 12H3\"/> <path d=\"M10 19H3\"/> <path d=\"M15 12.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997a1 1 0 0 1-1.517-.86z\"/>","folder-open":"<path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\"/>","download":"<path d=\"M12 15V3\"/> <path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/> <path d=\"m7 10 5 5 5-5\"/>","check":"<path d=\"M20 6 9 17l-5-5\"/>","circle-alert":"<circle cx=\"12\" cy=\"12\" r=\"10\"/> <line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/> <line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/>","rotate-ccw":"<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/> <path d=\"M3 3v5h5\"/>","settings-2":"<path d=\"M14 17H5\"/> <path d=\"M19 7h-9\"/> <circle cx=\"17\" cy=\"17\" r=\"3\"/> <circle cx=\"7\" cy=\"7\" r=\"3\"/>","power":"<path d=\"M12 2v10\"/> <path d=\"M18.4 6.6a9 9 0 1 1-12.77.04\"/>","loader-circle":"<path d=\"M21 12a9 9 0 1 1-6.219-8.56\"/>","refresh-cw":"<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/> <path d=\"M21 3v5h-5\"/> <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/> <path d=\"M8 16H3v5\"/>","arrow-down-to-line":"<path d=\"M12 17V3\"/> <path d=\"m6 11 6 6 6-6\"/> <path d=\"M19 21H5\"/>","link":"<path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"/> <path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"/>"};
+const icon = (n, cls = "") => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ""}</svg>`;
+
+/* ───────── strings ───────── */
+const T = {
+  en: {
+    placeholder: "Paste a link from YouTube, SoundCloud, Vimeo…",
+    paste: "Paste", clear: "Clear", lookUp: "Look up link", settings: "Settings", quit: "Quit Siphon",
+    reading: "Reading link…",
+    audio: "Audio", video: "Video", best: "Best", kbps: "kbps",
+    noVideo: "This link has no video",
+    download: "Download", added: "Added to downloads",
+    savingTo: "Saving to", change: "Change", openFolder: "Open folder", folder: "Download folder",
+    downloads: "Downloads", clearFinished: "Clear finished",
+    playlist: "Playlist", videosN: n => `${n} ${n === 1 ? "video" : "videos"}`,
+    cancel: "Cancel", reveal: "Show in folder", saveCopy: "Save a copy", retry: "Retry",
+    itemOf: (i, n) => `${i} of ${n}`, left: t => `${t} left`,
+    savedN: n => `${n} ${n === 1 ? "file" : "files"} saved`, savedFailed: (n, f) => `${n} saved, ${f} failed`,
+    alreadyThere: "Already in your folder",
+    engine: "Engine", updateEngine: "Update engine", engineUpdating: "Updating engine",
+    checked: t => `Last update ${t}`, never: "never", updateFailed: "Update failed:",
+    busy: "Wait for downloads to finish first.",
+    quitConfirm: "Downloads in progress will stop. Quit anyway?",
+    closedTitle: "Siphon is closed", closedText: "Launch Siphon again to keep downloading.", reconnect: "Reconnect",
+    stage: {
+      queued: "Waiting", engine: "Waiting for engine update", starting: "Starting",
+      download: "Downloading", download_video: "Downloading video", download_audio: "Downloading audio", download_media: "Downloading",
+      merging: "Merging video and audio", converting: "Converting", cover: "Adding cover", tagging: "Writing tags",
+      finishing: "Saving", processing: "Processing", done: "Saved", canceled: "Canceled"
+    },
+    err: {
+      invalid_url: "That isn't a link. Paste a full address, like https://youtube.com/watch?v=…",
+      unsupported: "This site or link isn't supported.",
+      bot: "YouTube wants to check you're not a bot. Try again in a few minutes.",
+      age: "This video is age-restricted and needs a signed-in account.",
+      members: "This video is for channel members only.",
+      private: "This video is private.",
+      upcoming: "This hasn't been released yet.",
+      live: "Live streams can't be downloaded while they're live.",
+      blocked: "This video isn't available in your country.",
+      unavailable: "This video or track is unavailable or was removed.",
+      format: "This quality isn't available. Pick another one.",
+      blocked_engine: "The site blocked the download. Update the engine in settings, then retry.",
+      convert: "Conversion failed.",
+      network: "Couldn't reach the site. Check your connection and retry.",
+      timeout: "The site took too long to answer. Retry.",
+      engine: "The download engine is broken. Update it in settings.",
+      generic: "Download failed.", server: "Something went wrong in Siphon.", picker: "Couldn't open the folder picker."
+    }
+  },
+  fr: {
+    placeholder: "Colle un lien YouTube, SoundCloud, Vimeo…",
+    paste: "Coller", clear: "Effacer", lookUp: "Analyser le lien", settings: "Réglages", quit: "Quitter Siphon",
+    reading: "Lecture du lien…",
+    audio: "Audio", video: "Vidéo", best: "Max", kbps: "kbps",
+    noVideo: "Ce lien ne contient pas de vidéo",
+    download: "Télécharger", added: "Ajouté aux téléchargements",
+    savingTo: "Enregistrement dans", change: "Changer", openFolder: "Ouvrir le dossier", folder: "Dossier de téléchargement",
+    downloads: "Téléchargements", clearFinished: "Effacer les terminés",
+    playlist: "Playlist", videosN: n => `${n} ${n === 1 ? "vidéo" : "vidéos"}`,
+    cancel: "Annuler", reveal: "Afficher dans le dossier", saveCopy: "Enregistrer une copie", retry: "Réessayer",
+    itemOf: (i, n) => `${i} sur ${n}`, left: t => `encore ${t}`,
+    savedN: n => `${n} ${n === 1 ? "fichier enregistré" : "fichiers enregistrés"}`, savedFailed: (n, f) => `${n} enregistrés, ${f} en échec`,
+    alreadyThere: "Déjà dans ton dossier",
+    engine: "Moteur", updateEngine: "Mettre à jour le moteur", engineUpdating: "Mise à jour du moteur",
+    checked: t => `Dernière mise à jour ${t}`, never: "jamais", updateFailed: "Échec de la mise à jour :",
+    busy: "Attends la fin des téléchargements.",
+    quitConfirm: "Les téléchargements en cours seront arrêtés. Quitter quand même ?",
+    closedTitle: "Siphon est fermé", closedText: "Relance Siphon pour continuer à télécharger.", reconnect: "Reconnecter",
+    stage: {
+      queued: "En attente", engine: "En attente du moteur", starting: "Démarrage",
+      download: "Téléchargement", download_video: "Téléchargement de la vidéo", download_audio: "Téléchargement de l’audio", download_media: "Téléchargement",
+      merging: "Assemblage vidéo et audio", converting: "Conversion", cover: "Ajout de la pochette", tagging: "Écriture des tags",
+      finishing: "Enregistrement", processing: "Traitement", done: "Enregistré", canceled: "Annulé"
+    },
+    err: {
+      invalid_url: "Ce n’est pas un lien. Colle une adresse complète, comme https://youtube.com/watch?v=…",
+      unsupported: "Ce site ou ce lien n’est pas pris en charge.",
+      bot: "YouTube veut vérifier que tu n’es pas un robot. Réessaie dans quelques minutes.",
+      age: "Cette vidéo est soumise à une limite d’âge et demande un compte connecté.",
+      members: "Cette vidéo est réservée aux membres de la chaîne.",
+      private: "Cette vidéo est privée.",
+      upcoming: "Ce contenu n’est pas encore sorti.",
+      live: "Impossible de télécharger un live pendant qu’il est en direct.",
+      blocked: "Cette vidéo n’est pas disponible dans ton pays.",
+      unavailable: "Cette vidéo ou ce morceau est indisponible ou a été supprimé.",
+      format: "Cette qualité n’est pas disponible. Choisis-en une autre.",
+      blocked_engine: "Le site a bloqué le téléchargement. Mets à jour le moteur dans les réglages, puis réessaie.",
+      convert: "La conversion a échoué.",
+      network: "Impossible de joindre le site. Vérifie ta connexion et réessaie.",
+      timeout: "Le site a mis trop de temps à répondre. Réessaie.",
+      engine: "Le moteur de téléchargement est cassé. Mets-le à jour dans les réglages.",
+      generic: "Le téléchargement a échoué.", server: "Un problème est survenu dans Siphon.", picker: "Impossible d’ouvrir le sélecteur de dossier."
+    }
+  }
+};
+
+/* ───────── state ───────── */
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("siphon." + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("siphon." + k, JSON.stringify(v)); } catch {} }
+};
+let lang = store.get("lang", (navigator.language || "en").toLowerCase().startsWith("fr") ? "fr" : "en");
+const prefs = Object.assign({ mode: "audio", audio: "mp3", bitrate: 320, quality: "best" }, store.get("prefs", {}));
+const S = { url: "", info: null, fetching: false, fetchErr: null, jobs: [], engine: {}, folder: "", offline: false, misses: 0, addedAt: 0 };
+let lookupCtl = null;
+const t = () => T[lang];
+const $ = s => document.querySelector(s);
+
+/* ───────── api ───────── */
+async function api(path, body, signal) {
+  const opts = body === undefined ? { signal } : {
+    method: "POST", signal, body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json", "X-Siphon": "1" }
+  };
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { const e = new Error(data.error || "server"); e.code = data.error || "server"; e.detail = data.detail || ""; throw e; }
+  return data;
+}
+
+/* ───────── helpers ───────── */
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function fmtDur(s) {
+  s = Math.round(s || 0); if (!s) return "";
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${x}` : `${m}:${x}`;
+}
+function fmtBytes(b) {
+  if (!b) return "";
+  const u = lang === "fr" ? ["Ko", "Mo", "Go"] : ["KB", "MB", "GB"];
+  const n = (v, d) => v.toLocaleString(lang === "fr" ? "fr-FR" : "en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+  if (b < 1e6) return `${Math.max(1, Math.round(b / 1e3))}\u00a0${u[0]}`;
+  if (b < 1e9) return `${n(b / 1e6, 1)}\u00a0${u[1]}`;
+  return `${n(b / 1e9, 2)}\u00a0${u[2]}`;
+}
+const fmtSpeed = v => v ? `${fmtBytes(v)}/s` : "";
+const SITES = { youtube: "YouTube", youtubetab: "YouTube", youtubemusic: "YouTube Music", soundcloud: "SoundCloud", soundcloudplaylist: "SoundCloud", soundcloudset: "SoundCloud", vimeo: "Vimeo", dailymotion: "Dailymotion", twitter: "X", instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", bandcamp: "Bandcamp", twitch: "Twitch", twitchvod: "Twitch", twitchclips: "Twitch", reddit: "Reddit", mixcloud: "Mixcloud" };
+const siteName = s => SITES[String(s || "").toLowerCase()] || s || "";
+function normalizeUrl(raw) {
+  raw = String(raw || "").trim();
+  const m = raw.match(/https?:\/\/[^\s<>"']+/i);
+  if (m) return m[0];
+  if (/^(www\.)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(raw)) return "https://" + raw;
+  return "";
+}
+function badgeText(j) {
+  if (j.mode === "audio") return j.format === "mp3" ? `MP3 ${j.quality}` : j.format.toUpperCase();
+  return j.quality === "best" || !j.quality ? "MP4" : `MP4 ${j.quality}p`;
+}
+function savePrefs() { store.set("prefs", prefs); }
+
+/* ───────── static text ───────── */
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-t]").forEach(el => { const v = t()[el.dataset.t]; if (typeof v === "string") el.textContent = v; });
+  document.querySelectorAll("[data-title]").forEach(el => { const v = t()[el.dataset.title]; el.title = v; el.setAttribute("aria-label", v); });
+  document.querySelectorAll("[data-ph]").forEach(el => el.placeholder = t()[el.dataset.ph]);
+  document.querySelectorAll("[data-lang]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+  renderFetchMsg(); renderCard(); renderJobs(true); renderSettings();
+}
+document.querySelectorAll("[data-icon]").forEach(el => el.innerHTML = icon(el.dataset.icon, el.classList.contains("spin-wrap") ? "sm spin" : ""));
+
+/* ───────── lookup ───────── */
+const urlInput = $("#url");
+async function lookup(raw) {
+  const url = normalizeUrl(raw ?? urlInput.value);
+  if (!url) { S.fetchErr = { code: "invalid_url" }; S.info = null; S.fetching = false; renderFetchMsg(); renderCard(); return; }
+  if (url === S.url && (S.fetching || S.info)) return;
+  urlInput.value = url; syncClear();
+  lookupCtl?.abort(); lookupCtl = new AbortController();
+  Object.assign(S, { url, info: null, fetchErr: null, fetching: true });
+  renderFetchMsg(); renderCard();
+  try {
+    const { info } = await api("/api/info", { url }, lookupCtl.signal);
+    if (S.url !== url) return;
+    S.info = info;
+  } catch (e) {
+    if (e.name === "AbortError") return;
+    if (S.url !== url) return;
+    S.fetchErr = { code: e.code || "network", detail: e.detail || "" };
+  }
+  S.fetching = false;
+  renderFetchMsg(); renderCard();
+}
+function goHome() {
+  lookupCtl?.abort();
+  Object.assign(S, { url: "", info: null, fetchErr: null, fetching: false });
+  urlInput.value = ""; syncClear(); closeSettings();
+  renderFetchMsg(); renderCard();
+  window.scrollTo({ top: 0 });
+  urlInput.focus();
+}
+function syncClear() { $("#clearBtn").hidden = !urlInput.value; }
+
+function renderFetchMsg() {
+  const box = $("#fetchMsg");
+  if (!S.fetchErr) { box.hidden = true; box.innerHTML = ""; return; }
+  const msg = t().err[S.fetchErr.code] || t().err.generic;
+  box.innerHTML = `${icon("circle-alert")}<div>${esc(msg)}${S.fetchErr.detail ? `<small>${esc(S.fetchErr.detail)}</small>` : ""}</div>`;
+  box.hidden = false;
+}
+
+/* ───────── preview + options ───────── */
+function renderCard() {
+  const card = $("#card");
+  if (!S.fetching && !S.info) { card.hidden = true; return; }
+  card.hidden = false;
+  const pv = $("#preview"), op = $("#opts");
+  if (S.fetching) {
+    pv.innerHTML = `<div class="thumb skel"></div><div class="pmeta"><div class="skel" style="height:18px;width:82%"></div><div class="skel" style="height:14px;width:40%"></div><p class="psub" style="margin-top:4px">${esc(t().reading)}</p></div>`;
+    op.hidden = true; return;
+  }
+  const i = S.info;
+  const facts = [];
+  if (i.kind === "playlist") facts.push(`<span class="fact">${icon("list-video")}${esc(i.count ? `${t().playlist}, ${t().videosN(i.count)}` : t().playlist)}</span>`);
+  if (i.duration) facts.push(`<span class="fact">${fmtDur(i.duration)}</span>`);
+  if (i.site) facts.push(`<span class="fact">${esc(siteName(i.site))}</span>`);
+  pv.innerHTML = `
+    <div class="thumb${i.thumbnail ? "" : " empty"}">${i.thumbnail ? `<img src="${esc(i.thumbnail)}" alt="" referrerpolicy="no-referrer">` : icon(i.hasVideo ? "clapperboard" : "music")}</div>
+    <div class="pmeta">
+      <h2 class="ptitle" title="${esc(i.title)}">${esc(i.title)}</h2>
+      ${i.uploader ? `<p class="psub">${esc(i.uploader)}</p>` : ""}
+      <div class="facts">${facts.join("")}</div>
+    </div>`;
+  const img = pv.querySelector("img");
+  if (img) img.onerror = () => { const box = img.parentElement; box.classList.add("empty"); box.innerHTML = icon(i.hasVideo ? "clapperboard" : "music"); };
+  op.hidden = false;
+  renderOptions();
+}
+
+function videoChoices() {
+  const i = S.info;
+  const bestLabel = i.maxHeight ? `${t().best}<span class="hint">${i.maxHeight}p</span>` : t().best;
+  return [{ v: "best", label: bestLabel }, ...i.heights.map(h => ({ v: h, label: `${h}p` }))];
+}
+function effectiveQuality() {
+  const vals = videoChoices().map(c => c.v);
+  if (vals.includes(prefs.quality)) return prefs.quality;
+  if (prefs.quality === "best") return "best";
+  const lower = vals.filter(v => v !== "best" && v <= prefs.quality);
+  return lower.length ? lower[0] : "best";
+}
+function renderOptions() {
+  const i = S.info, op = $("#opts");
+  const canVideo = i.hasVideo !== false, canAudio = i.hasAudio !== false;
+  let mode = prefs.mode;
+  if (mode === "video" && !canVideo) mode = "audio";
+  if (mode === "audio" && !canAudio) mode = "video";
+  const choice = (group, v, label, on) => `<button type="button" class="choice" role="radio" aria-checked="${on}" data-group="${group}" data-v="${v}">${label}</button>`;
+  let rows = "";
+  if (mode === "audio") {
+    rows += `<div class="choices" role="radiogroup" aria-label="Format">${["mp3", "wav", "flac", "m4a"].map(f => choice("audio", f, f.toUpperCase(), prefs.audio === f)).join("")}</div>`;
+    if (prefs.audio === "mp3") rows += `<div class="choices" role="radiogroup" aria-label="Bitrate">${[320, 256, 192, 128].map(b => choice("bitrate", b, `${b} ${t().kbps}`, prefs.bitrate === b)).join("")}</div>`;
+  } else {
+    const q = effectiveQuality();
+    rows += `<div class="choices" role="radiogroup" aria-label="Quality">${videoChoices().map(c => choice("quality", c.v, c.label, q === c.v)).join("")}</div>`;
+  }
+  op.innerHTML = `
+    <div class="tabs" role="tablist">
+      <button type="button" class="tab" role="tab" data-mode="audio" aria-selected="${mode === "audio"}" ${canAudio ? "" : "disabled"}>${icon("music", "sm")}${esc(t().audio)}</button>
+      <button type="button" class="tab" role="tab" data-mode="video" aria-selected="${mode === "video"}" ${canVideo ? "" : `disabled title="${esc(t().noVideo)}"`}>${icon("clapperboard", "sm")}${esc(t().video)}</button>
+    </div>
+    ${rows}
+    <button type="button" class="dl" id="dlBtn">${icon("download")}<span>${esc(downloadLabel(mode))}</span></button>
+    <div class="dest"><span>${esc(t().savingTo)}</span><span class="path" id="folderPath" title="${esc(S.folder)}"><bdi>${esc(S.folder)}</bdi></span>
+      <button type="button" class="link-btn" data-action="choose-folder">${esc(t().change)}</button></div>`;
+  op.dataset.mode = mode;
+}
+function downloadLabel(mode) {
+  if (Date.now() - S.addedAt < 1400) return t().added;
+  if (mode === "audio") return prefs.audio === "mp3" ? `${t().download} MP3 ${prefs.bitrate} ${t().kbps}` : `${t().download} ${prefs.audio.toUpperCase()}`;
+  const q = effectiveQuality();
+  return q === "best" ? `${t().download} MP4` : `${t().download} MP4 ${q}p`;
+}
+
+$("#opts").addEventListener("click", e => {
+  const tab = e.target.closest(".tab");
+  if (tab) { if (!tab.disabled) { prefs.mode = tab.dataset.mode; savePrefs(); renderOptions(); } return; }
+  const c = e.target.closest(".choice");
+  if (c) {
+    const g = c.dataset.group, v = c.dataset.v;
+    if (g === "audio") prefs.audio = v;
+    if (g === "bitrate") prefs.bitrate = Number(v);
+    if (g === "quality") prefs.quality = v === "best" ? "best" : Number(v);
+    savePrefs(); renderOptions(); return;
+  }
+  if (e.target.closest("#dlBtn")) startDownload();
+});
+
+async function startDownload() {
+  const i = S.info; if (!i) return;
+  const btn = $("#dlBtn"); if (btn.disabled) return;
+  btn.disabled = true;
+  const mode = $("#opts").dataset.mode;
+  const body = {
+    url: i.url || S.url, mode, title: i.title, thumbnail: i.thumbnail,
+    playlist: i.kind === "playlist", count: i.count || 0,
+    format: mode === "audio" ? prefs.audio : "mp4",
+    quality: mode === "audio" ? (prefs.audio === "mp3" ? prefs.bitrate : null) : effectiveQuality()
+  };
+  try {
+    const { job } = await api("/api/download", body);
+    S.jobs = [job, ...S.jobs.filter(j => j.id !== job.id)];
+    S.flashId = job.id; S.addedAt = Date.now();
+    renderJobs(); renderOptions(); schedulePoll(300);
+    setTimeout(() => { if (S.info) renderOptions(); }, 1500);
+  } catch (e) {
+    S.fetchErr = { code: e.code || "server", detail: e.detail || "" }; renderFetchMsg();
+    btn.disabled = false;
+  }
+}
+
+/* ───────── downloads ───────── */
+const rows = new Map();
+function jobStatus(j) {
+  const s = t().stage;
+  if (j.status === "done") {
+    if (j.playlist) return j.failed ? t().savedFailed(j.files.length, j.failed) : (j.files.length ? t().savedN(j.files.length) : t().alreadyThere);
+    return j.files.length ? s.done : t().alreadyThere;
+  }
+  if (j.status === "error") return t().err[j.error?.code] || t().err.generic;
+  return s[j.stage] || s.processing;
+}
+function rowHtml(j) {
+  return `<div class="jthumb">${j.thumbnail ? `<img src="${esc(j.thumbnail)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon(j.mode === "audio" ? "music" : "clapperboard")}</div>
+    <div class="jbody"><div class="jtitle" title="${esc(j.title)}">${esc(j.title)}</div><div class="jline"></div><div class="meter"><i></i></div><div class="jdetail" hidden></div></div>
+    <div class="jact"></div>`;
+}
+function updateRow(el, j, force) {
+  const key = [lang, j.status, j.stage, j.percent, j.speed, j.eta, j.item, j.items, j.files.length, j.size, j.failed].join("|");
+  if (!force && el._key === key) return;
+  el._key = key;
+  el.className = `job ${j.status}${el.classList.contains("flash") ? " flash" : ""}`;
+  const active = j.status === "running" || j.status === "queued";
+  const downloading = j.status === "running" && /^download/.test(j.stage);
+  const parts = [`<span class="badge">${j.playlist ? icon("list-video") : ""}${esc(badgeText(j))}</span>`];
+  let st = jobStatus(j);
+  const ico = j.status === "done" ? icon("check") : j.status === "error" ? icon("circle-alert") : "";
+  if (j.playlist && active && j.items) st = `${st} ${t().itemOf(Math.max(j.item, 1), j.items)}`;
+  parts.push(`<span class="jstat">${ico}<span>${esc(st)}</span></span>`);
+  if (downloading) {
+    parts.push(`<span class="num">${Math.floor(j.percent)}%</span>`);
+    if (j.speed) parts.push(`<span>${fmtSpeed(j.speed)}</span>`);
+    if (j.eta != null && j.eta > 0) parts.push(`<span class="dim">${esc(t().left(fmtDur(j.eta)))}</span>`);
+  }
+  if (j.status === "done" && j.size && !j.playlist) parts.push(`<span class="dim">${fmtBytes(j.size)}</span>`);
+  el.querySelector(".jline").innerHTML = parts.join("");
+  const meter = el.querySelector(".meter");
+  meter.hidden = !active;
+  meter.classList.toggle("work", j.status === "running" && !downloading && j.stage !== "starting");
+  meter.classList.toggle("wait", j.status === "queued" || j.stage === "starting" || j.stage === "engine");
+  meter.style.setProperty("--p", downloading ? j.percent : 0);
+  const det = el.querySelector(".jdetail");
+  const detail = j.status === "error" ? (j.error?.detail || "") : "";
+  det.hidden = !detail; det.textContent = detail; det.title = detail;
+  const acts = [];
+  if (active) acts.push(["cancel", "x", t().cancel]);
+  if (j.status === "done") {
+    acts.push(["reveal", "folder-open", t().reveal]);
+    if (j.single) acts.push(["save", "download", t().saveCopy]);
+  }
+  if (j.status === "error" || j.status === "canceled") acts.push(["retry", "rotate-ccw", t().retry]);
+  el.querySelector(".jact").innerHTML = acts.map(([a, ic, label]) => `<button type="button" class="icon-btn" data-job-action="${a}" title="${esc(label)}" aria-label="${esc(label)}">${icon(ic)}</button>`).join("");
+}
+function renderJobs(force) {
+  const list = $("#list");
+  $("#dls").hidden = S.jobs.length === 0;
+  $("#clearDone").hidden = !S.jobs.some(j => ["done", "error", "canceled"].includes(j.status));
+  const ids = new Set(S.jobs.map(j => j.id));
+  for (const [id, el] of rows) if (!ids.has(id)) { el.remove(); rows.delete(id); }
+  let prev = null;
+  for (const j of S.jobs) {
+    let el = rows.get(j.id);
+    if (!el) {
+      el = document.createElement("article");
+      el.dataset.id = j.id;
+      el.innerHTML = rowHtml(j);
+      const img = el.querySelector(".jthumb img");
+      if (img) img.onerror = () => { img.parentElement.innerHTML = icon(j.mode === "audio" ? "music" : "clapperboard"); };
+      rows.set(j.id, el);
+      if (S.flashId === j.id) { el.classList.add("flash"); setTimeout(() => el.classList.remove("flash"), 1200); S.flashId = null; }
+    }
+    updateRow(el, j, force);
+    const want = prev ? prev.nextSibling : list.firstChild;
+    if (want !== el) list.insertBefore(el, want);
+    prev = el;
+  }
+}
+$("#list").addEventListener("click", async e => {
+  const b = e.target.closest("[data-job-action]"); if (!b) return;
+  const id = b.closest(".job").dataset.id, j = S.jobs.find(x => x.id === id); if (!j) return;
+  const a = b.dataset.jobAction;
+  try {
+    if (a === "cancel") { await api(`/api/jobs/${id}/cancel`, {}); schedulePoll(150); }
+    if (a === "reveal") await api(`/api/jobs/${id}/reveal`, {});
+    if (a === "save") { const link = document.createElement("a"); link.href = `/api/jobs/${id}/file`; link.download = ""; document.body.appendChild(link); link.click(); link.remove(); }
+    if (a === "retry") {
+      const { job } = await api("/api/download", { url: j.url, mode: j.mode, format: j.format, quality: j.quality, title: j.title, thumbnail: j.thumbnail, playlist: j.playlist, count: j.items });
+      S.jobs = [job, ...S.jobs]; S.flashId = job.id; renderJobs(); schedulePoll(300);
+    }
+  } catch {}
+});
+$("#clearDone").addEventListener("click", async () => { try { const d = await api("/api/jobs/clear", {}); S.jobs = d.jobs; renderJobs(); } catch {} });
+
+/* ───────── polling ───────── */
+let pollTimer = null;
+function schedulePoll(ms) { clearTimeout(pollTimer); pollTimer = setTimeout(poll, ms); }
+async function poll() {
+  let next = 4000;
+  try {
+    const d = await api("/api/jobs");
+    S.jobs = d.jobs; S.engine = d.engine || {}; S.misses = 0;
+    if (S.offline) { S.offline = false; $("#closed").hidden = true; loadState(); }
+    renderJobs(); renderEngine();
+    if (S.jobs.some(j => j.status === "running" || j.status === "queued") || S.engine.status === "updating") next = 600;
+  } catch {
+    if (++S.misses >= 3 && !S.offline) { S.offline = true; $("#closed").hidden = false; }
+    next = 3000;
+  }
+  schedulePoll(next);
+}
+
+/* ───────── engine + settings ───────── */
+function renderEngine() {
+  $("#engineChip").hidden = S.engine.status !== "updating";
+  if (!$("#settings").hidden) renderSettings();
+}
+function renderSettings() {
+  const v = S.engine.versions || {};
+  const rowsKv = [["yt-dlp", v.yt_dlp], ["EJS", v.ejs], [v.node && !v.deno ? "Node" : "Deno", v.deno || v.node], ["FFmpeg", v.ffmpeg]];
+  $("#versions").innerHTML = rowsKv.map(([k, val]) => `<dt>${k}</dt><dd>${esc(val || "—")}</dd>`).join("");
+  const upd = S.engine.status === "updating";
+  const btn = $("#updateBtn");
+  btn.disabled = upd;
+  btn.innerHTML = `${icon("refresh-cw", upd ? "spin" : "")}<span>${esc(upd ? t().engineUpdating : t().updateEngine)}</span>`;
+  const note = $("#engineNote");
+  if (S.engine.status === "error" && S.engine.error) { note.className = "note err"; note.textContent = `${t().updateFailed} ${S.engine.error}`; }
+  else if (S.engineMsg) { note.className = "note err"; note.textContent = S.engineMsg; }
+  else {
+    note.className = "note";
+    const c = S.engine.checked;
+    note.textContent = t().checked(c ? new Date(c * 1000).toLocaleString(lang === "fr" ? "fr-FR" : "en-GB", { dateStyle: "medium", timeStyle: "short" }) : t().never);
+  }
+  $("#folderPath2").innerHTML = `<bdi>${esc(S.folder)}</bdi>`;
+  $("#folderPath2").title = S.folder;
+}
+function openSettings() { renderSettings(); $("#settings").hidden = false; $("#settingsBtn").setAttribute("aria-expanded", "true"); }
+function closeSettings() { $("#settings").hidden = true; $("#settingsBtn").setAttribute("aria-expanded", "false"); S.engineMsg = ""; }
+$("#settingsBtn").addEventListener("click", e => { e.stopPropagation(); $("#settings").hidden ? openSettings() : closeSettings(); });
+document.addEventListener("click", e => { if (!$("#settings").hidden && !e.target.closest("#settings") && !e.target.closest("#settingsBtn")) closeSettings(); });
+$("#updateBtn").addEventListener("click", async () => {
+  S.engineMsg = "";
+  try { const d = await api("/api/engine/update", {}); S.engine = d.engine; }
+  catch (e) { S.engineMsg = e.code === "busy" ? t().busy : t().err.server; }
+  renderSettings(); renderEngine(); schedulePoll(400);
+});
+
+/* ───────── folder + global actions ───────── */
+document.addEventListener("click", async e => {
+  const a = e.target.closest("[data-action]"); if (!a) return;
+  try {
+    if (a.dataset.action === "open-folder") await api("/api/folder/open", {});
+    if (a.dataset.action === "choose-folder") {
+      const d = await api("/api/folder/choose", { title: t().folder });
+      S.folder = d.folder; if (S.info) renderOptions(); renderSettings();
+    }
+  } catch (err) { if (err.code === "picker") { S.fetchErr = { code: "picker", detail: err.detail }; renderFetchMsg(); } }
+});
+$("#quitBtn").addEventListener("click", async () => {
+  if (S.jobs.some(j => j.status === "running" || j.status === "queued") && !confirm(t().quitConfirm)) return;
+  try { await api("/api/quit", {}); } catch {}
+  clearTimeout(pollTimer); S.offline = true; $("#closed").hidden = false;
+  setTimeout(() => schedulePoll(3000), 1500);
+});
+$("#reconnect").addEventListener("click", () => schedulePoll(0));
+$("#home").addEventListener("click", goHome);
+document.querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => { lang = b.dataset.lang; store.set("lang", lang); applyLang(); }));
+
+/* ───────── input behaviour ───────── */
+$("#deck").addEventListener("submit", e => { e.preventDefault(); lookup(); });
+urlInput.addEventListener("input", () => { syncClear(); if (S.fetchErr) { S.fetchErr = null; renderFetchMsg(); } });
+urlInput.addEventListener("paste", e => {
+  const text = e.clipboardData?.getData("text") || "";
+  const url = normalizeUrl(text);
+  if (url) { e.preventDefault(); urlInput.value = url; lookup(url); }
+});
+$("#clearBtn").addEventListener("click", goHome);
+$("#pasteBtn").addEventListener("click", async () => {
+  try { const text = await navigator.clipboard.readText(); if (text) lookup(text); else urlInput.focus(); }
+  catch { urlInput.focus(); }
+});
+document.addEventListener("paste", e => {
+  if (e.target === urlInput || e.target.closest?.("input,textarea")) return;
+  const url = normalizeUrl(e.clipboardData?.getData("text") || "");
+  if (url) { e.preventDefault(); lookup(url); }
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeSettings(); });
+const deck = $("#deck");
+["dragenter", "dragover"].forEach(ev => document.addEventListener(ev, e => { if ([...(e.dataTransfer?.types || [])].some(x => x === "text/uri-list" || x === "text/plain")) { e.preventDefault(); deck.classList.add("drop"); } }));
+["dragleave", "drop"].forEach(ev => document.addEventListener(ev, e => { if (ev === "dragleave" && e.relatedTarget) return; deck.classList.remove("drop"); }));
+document.addEventListener("drop", e => {
+  const text = e.dataTransfer?.getData("text/uri-list") || e.dataTransfer?.getData("text/plain") || "";
+  if (normalizeUrl(text)) { e.preventDefault(); lookup(text.split(/\r?\n/).find(l => normalizeUrl(l)) || text); }
+});
+
+/* ───────── boot ───────── */
+async function loadState() {
+  try {
+    const d = await api("/api/state");
+    S.folder = d.folder; S.jobs = d.jobs; S.engine = d.engine || {};
+    renderJobs(); renderEngine(); if (S.info) renderOptions();
+  } catch {}
+}
+applyLang();
+loadState().then(() => schedulePoll(600));
+urlInput.focus();
+</script>
+</body>
+</html>
