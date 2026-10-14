@@ -5,6 +5,7 @@ so engine updates apply to the next download without a restart.
 """
 from __future__ import annotations
 
+import array
 import importlib.util
 import json
 import logging
@@ -53,6 +54,16 @@ AUDIO_FORMATS = {"mp3", "wav", "flac", "m4a"}
 MP3_BITRATES = {320, 256, 192, 128}
 COVER_FORMATS = {"mp3", "flac", "m4a"}
 VIDEO_HEIGHTS = [2160, 1440, 1080, 720, 480, 360]
+
+MEDIA_TYPES = {".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".flac": "audio/flac", ".wav": "audio/wav",
+               ".opus": "audio/ogg", ".ogg": "audio/ogg", ".mp4": "video/mp4", ".webm": "video/webm"}
+RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
+# Decode at full rate: resampling down to a few kHz would low-pass the signal
+# and flatten everything bright — a hi-hat-heavy set would read as near silence.
+# The envelope is reduced in the time domain instead, which is what a waveform is.
+PEAK_RATE = 44100       # mono samples per second asked of FFmpeg
+ENVELOPE_HZ = 20        # envelope points per second kept while streaming
+PEAK_BUCKETS = 1800     # columns in the drawn waveform
 
 log = logging.getLogger("siphon")
 
@@ -687,6 +698,83 @@ def safe_name(text: str, fallback: str) -> str:
     return name[:110] or fallback
 
 
+def parse_range(header: str | None, size: int) -> tuple[int, int] | None:
+    """The byte window a client asked for, or None to mean the whole file.
+
+    Raises ValueError when the window falls outside the file, which is the one
+    case that owes the client a 416 rather than the bytes it asked for.
+    """
+    if not header or not size:
+        return None
+    m = RANGE_RE.fullmatch(header.strip())
+    if not m or not (m.group(1) or m.group(2)):
+        return None
+    if m.group(1):
+        start = int(m.group(1))
+        end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+    else:
+        start, end = max(0, size - int(m.group(2))), size - 1     # bytes=-N : the tail
+    if start >= size or start > end:
+        raise ValueError("unsatisfiable")
+    return start, end
+
+
+def compute_peaks(ff: str, path: str, buckets: int = PEAK_BUCKETS) -> tuple[list[int], float]:
+    """One amplitude per column of the waveform, 0-255.
+
+    Decoding two hours of audio in the browser would cost gigabytes of memory;
+    FFmpeg hands back a mono 1 kHz stream instead — a few megabytes, a few
+    seconds — which is far more shape than a 1800-pixel drawing can show.
+    """
+    args = [ff, "-nostdin", "-loglevel", "error", "-i", path, "-map", "0:a:0",
+            "-ac", "1", "-ar", str(PEAK_RATE), "-f", "s16le", "-"]
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                            stdin=subprocess.DEVNULL, env=child_env(), creationflags=NO_WINDOW)
+    window = PEAK_RATE // ENVELOPE_HZ
+    envelope: list[int] = []
+    residual, carry = array.array("h"), b""
+    deadline = time.time() + 900
+    try:
+        while True:
+            buf = proc.stdout.read(1 << 20)
+            if not buf:
+                break
+            if time.time() > deadline:
+                raise RuntimeError("timed out")
+            buf = carry + buf
+            usable = len(buf) - len(buf) % 2          # a read can split a sample in two
+            carry = buf[usable:]
+            block = array.array("h")
+            block.frombytes(buf[:usable])
+            if sys.byteorder == "big":
+                block.byteswap()                      # FFmpeg writes little-endian
+            residual.extend(block)
+            i = 0
+            while i + window <= len(residual):
+                w = residual[i:i + window]
+                envelope.append(max(max(w), -min(w)))
+                i += window
+            del residual[:i]                          # only a partial window is ever held
+    finally:
+        proc.stdout.close()
+        err = proc.stderr.read() or b""
+        proc.stderr.close()
+        proc.wait()
+    if len(residual):
+        envelope.append(max(max(residual), -min(residual)))
+    if proc.returncode != 0 and not envelope:
+        raise RuntimeError(err.decode("utf-8", "replace").strip()[-200:] or "no audio stream")
+    if not envelope:
+        return [], 0.0
+    out, step = [], len(envelope) / buckets
+    for i in range(buckets):
+        a, b = int(i * step), int((i + 1) * step)
+        seg = envelope[a:max(b, a + 1)]
+        out.append(min(255, max(seg) * 255 // 32768) if seg else 0)
+    # the decoded sample count is the duration, and it beats whatever the site claimed
+    return out, len(envelope) / ENVELOPE_HZ
+
+
 def clean_marks(raw) -> list[dict]:
     """Validate cut points coming from the page."""
     out = []
@@ -716,6 +804,8 @@ class Job:
         self.playlist = bool(params.get("playlist"))
         self.marks = params.get("marks") or []      # cut points, when the file is to be split
         self.split = bool(self.marks)
+        self.duration = int(params.get("duration") or 0)
+        self.peaks: list[int] = []                  # waveform, computed on demand and kept
         self.count = int(params.get("count") or 0)
         self.folder = params["folder"]
         self.status = "queued"                     # queued running done error canceled
@@ -753,15 +843,23 @@ class Job:
         self._size, self._sized_at = total, now
         return total
 
+    def source_file(self) -> str | None:
+        """The whole file, as opposed to any pieces cut out of it."""
+        return next((f for f in self.files if os.path.isfile(f)), None)
+
     def public(self) -> dict:
         size = self.total_size()
+        src = self.source_file()
+        editable = bool(src and not self.playlist and self.status == "done"
+                        and Path(src).suffix.lower() in MEDIA_TYPES)
         return {"id": self.id, "url": self.url, "title": self.title, "thumbnail": self.thumbnail,
                 "mode": self.mode, "format": self.format, "quality": self.quality,
                 "playlist": self.playlist, "split": self.split,
                 "status": self.status, "stage": self.stage, "percent": round(self.percent, 1),
                 "speed": self.speed, "eta": self.eta, "item": self.item, "items": self.items,
                 "failed": self.failed, "files": [Path(f).name for f in self.files], "size": size,
-                "single": len(self.files) == 1 and not self.playlist,
+                "single": len(self.files) == 1 and not self.playlist, "editable": editable,
+                "duration": self.duration,
                 "error": {"code": self.error_code, "detail": self.error_detail} if self.error_code else None,
                 "created": self.created}
 
@@ -930,16 +1028,34 @@ class JobManager:
             remove_tree(job.tmp)
             self.slots.release()
 
-    def _split(self, job: Job) -> None:
-        """Cut the finished file at its marks, into a folder of its own.
+    def run_split(self, job: Job, marks: list[dict], source: str) -> None:
+        """Re-split a file that was already downloaded, from the editor.
+
+        It runs on the job it came from, so the existing progress and error
+        plumbing carries it without the page needing to learn anything new.
+        """
+        job.status, job.stage, job.percent, job.failed = "running", "splitting", 0.0, 0
+        job.cancel_requested = False
+        try:
+            self._split(job, marks, source)
+        except Exception as exc:
+            log.exception("job %s: re-split crashed", job.id)
+            job.status, job.stage = "error", "error"
+            job.error_code, job.error_detail = "convert", str(exc)[:300]
+        else:
+            job.status, job.stage, job.percent = "done", "done", 100.0
+
+    def _split(self, job: Job, marks: list[dict] | None = None, source: str | None = None) -> None:
+        """Cut a finished file at the given marks, into a folder of its own.
 
         A stream copy, so it is lossless and near-instant, and every piece keeps
         the cover and the tags the download already wrote. The full file stays
         where it is: the pieces go in a subfolder beside it.
         """
         ff = self.engine.ffmpeg()
-        source = next((f for f in job.files if os.path.isfile(f)), None)
-        if not ff or not source:
+        marks = marks or job.marks
+        source = source or next((f for f in job.files if os.path.isfile(f)), None)
+        if not ff or not source or not marks:
             log.info("job %s: nothing to split", job.id)
             return
         src = Path(source)
@@ -949,13 +1065,13 @@ class JobManager:
         except OSError as exc:
             log.warning("job %s: cannot create %s: %s", job.id, out_dir, exc)
             return
-        job.stage, job.items, job.percent = "splitting", len(job.marks), 0.0
+        job.stage, job.items, job.percent = "splitting", len(marks), 0.0
         pieces = []
-        for n, mark in enumerate(job.marks, 1):
+        for n, mark in enumerate(marks, 1):
             if job.cancel_requested:
                 break
             job.item = n
-            job.percent = 100.0 * (n - 1) / len(job.marks)
+            job.percent = 100.0 * (n - 1) / len(marks)
             target = out_dir / f"{n:03d} - {safe_name(mark.get('title'), f'{src.stem} {n}')}{src.suffix}"
             # -ss and -t ahead of -i are input options: seek, then read only that much
             args = [ff, "-nostdin", "-loglevel", "error", "-y", "-ss", str(mark["start"])]
@@ -972,9 +1088,9 @@ class JobManager:
             else:
                 job.failed += 1
                 log.info("job %s: piece %s failed: %s", job.id, n, (res.stderr or "")[-200:])
-        job.files.extend(pieces)
+        job.files.extend(p for p in pieces if p not in job.files)
         job.percent = 100.0
-        log.info("job %s: %s pieces from %s marks", job.id, len(pieces), len(job.marks))
+        log.info("job %s: %s pieces from %s marks", job.id, len(pieces), len(marks))
 
     def _handle(self, job: Job, line: str) -> None:
         tag, _, rest = line.partition(" ")
@@ -1203,31 +1319,71 @@ class Handler(BaseHTTPRequestHandler):
                                     "engine": STATE.engine.snapshot(), "jobs": STATE.jobs.list()})
         if path == "/api/jobs":
             return self._json(200, {"jobs": STATE.jobs.list(), "engine": STATE.engine.snapshot()})
-        m = re.fullmatch(r"/api/jobs/([0-9a-f]{12})/file", path)
+        m = re.fullmatch(r"/api/jobs/([0-9a-f]{12})/(file|audio)", path)
         if m:
             job = STATE.jobs.get(m.group(1))
-            if not job or job.status != "done" or len(job.files) != 1 or not os.path.isfile(job.files[0]):
+            if not job:
+                return self._send(404, b"Not found", "text/plain")
+            if m.group(2) == "audio":           # played in the page, so inline and seekable
+                src = job.source_file()
+                if not src:
+                    return self._send(404, b"Not found", "text/plain")
+                return self._stream_file(src, download=False)
+            if job.status != "done" or len(job.files) != 1 or not os.path.isfile(job.files[0]):
                 return self._send(404, b"Not found", "text/plain")
             return self._stream_file(job.files[0])
         return self._send(404, b"Not found", "text/plain")
 
     do_HEAD = do_GET
 
-    def _stream_file(self, path: str) -> None:
-        name = Path(path).name
-        ascii_name = re.sub(r'[^\x20-\x7e]|["\\]', "_", name)
+    def _stream_file(self, path: str, download: bool = True) -> None:
+        """Serve a file, honouring Range.
+
+        An <audio> element cannot seek without it: the browser asks for the
+        byte window around the position you clicked, and a server that always
+        answers with the whole file forces it to buffer from zero every time.
+        """
         size = os.path.getsize(path)
-        self.send_response(200)
-        self.send_header("Content-Type", "application/octet-stream")
-        self.send_header("Content-Length", str(size))
-        self.send_header("Content-Disposition",
-                         f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}")
+        ctype = "application/octet-stream" if download else \
+            MEDIA_TYPES.get(Path(path).suffix.lower(), "application/octet-stream")
+        try:
+            window = parse_range(self.headers.get("Range"), size)
+        except ValueError:
+            self.send_response(416)
+            self.send_header("Content-Range", f"bytes */{size}")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        start, end = window if window else (0, size - 1)
+        status = 206 if window else 200
+        length = end - start + 1
+        self.send_response(status)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(length))
+        self.send_header("Accept-Ranges", "bytes")
+        if status == 206:
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        if download:
+            name = Path(path).name
+            ascii_name = re.sub(r'[^\x20-\x7e]|["\\]', "_", name)
+            self.send_header("Content-Disposition",
+                             f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name)}")
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         if self.command == "HEAD":
             return
-        with open(path, "rb") as fh:
-            shutil.copyfileobj(fh, self.wfile, 1024 * 256)
+        try:
+            with open(path, "rb") as fh:
+                fh.seek(start)
+                left = length
+                while left > 0:
+                    chunk = fh.read(min(262144, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+        except (BrokenPipeError, ConnectionError):
+            pass        # seeking away mid-read is normal, not an error
 
     # ── POST ──
     def do_POST(self):
@@ -1294,7 +1450,7 @@ class Handler(BaseHTTPRequestHandler):
                 "title": str(body.get("title") or "")[:300],
                 "thumbnail": thumb if thumb.startswith(("http://", "https://")) else "",
                 "playlist": bool(body.get("playlist")), "marks": clean_marks(body.get("marks")),
-                "count": count, "folder": dest["folder"],
+                "duration": body.get("duration"), "count": count, "folder": dest["folder"],
             })
             return self._json(200, {"job": job.public()})
 
@@ -1331,6 +1487,40 @@ class Handler(BaseHTTPRequestHandler):
                 STATE.dests.select(saved["id"])
                 STATE.save_config()
             return self._json(200, {"destinations": STATE.dests.public()})
+
+        m = re.fullmatch(r"/api/jobs/([0-9a-f]{12})/peaks", path)
+        if m:
+            job = STATE.jobs.get(m.group(1))
+            src = job.source_file() if job else None
+            if not job or not src:
+                return self._json(404, {"error": "not_found"})
+            if not job.peaks:                       # kept: the decode is the expensive part
+                ff = STATE.engine.ffmpeg()
+                if not ff:
+                    return self._json(500, {"error": "engine"})
+                try:
+                    job.peaks, seconds = compute_peaks(ff, src)
+                except Exception as exc:
+                    log.warning("peaks for %s failed: %s", job.id, exc)
+                    return self._json(422, {"error": "convert", "detail": str(exc)[:200]})
+                if seconds:
+                    job.duration = seconds
+            return self._json(200, {"peaks": job.peaks, "duration": job.duration,
+                                    "name": Path(src).name})
+
+        m = re.fullmatch(r"/api/jobs/([0-9a-f]{12})/split", path)
+        if m:
+            job = STATE.jobs.get(m.group(1))
+            src = job.source_file() if job else None
+            if not job or not src:
+                return self._json(404, {"error": "not_found"})
+            if job.status not in ("done", "error", "canceled"):
+                return self._json(409, {"error": "busy"})
+            marks = clean_marks(body.get("marks"))
+            if not marks:
+                return self._json(400, {"error": "bad_request"})
+            threading.Thread(target=STATE.jobs.run_split, args=(job, marks, src), daemon=True).start()
+            return self._json(200, {"job": job.public()})
 
         m = re.fullmatch(r"/api/jobs/([0-9a-f]{12})/(cancel|reveal)", path)
         if m:
