@@ -148,6 +148,31 @@ button:disabled{cursor:default}
 .meter.wait>i{width:0}
 @keyframes sweep{from{background-position:100% 0}to{background-position:-200% 0}}
 
+/* waveform editor */
+.editor{display:grid;gap:14px}
+.ed-top{display:flex;align-items:center;gap:12px}
+.ed-name{flex:1;min-width:0;margin:0;font-size:16px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ed-export{height:40px;padding:0 16px;flex:none}
+.wavebox{position:relative;height:190px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-md);overflow:hidden}
+.wavebox canvas{display:block;width:100%;height:100%;cursor:crosshair;touch-action:none}
+.wavebox.grabbing canvas{cursor:grabbing}
+.ed-note{position:absolute;inset:0;margin:0;display:grid;place-items:center;color:var(--muted);font-size:14px;text-align:center;padding:16px;pointer-events:none}
+.ed-bar{display:flex;align-items:center;gap:10px}
+.ed-bar .spacer{flex:1}
+.ed-time{font-size:13.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ed-list{display:grid;gap:4px;max-height:320px;overflow:auto}
+.ed-row{display:grid;grid-template-columns:auto auto 1fr auto;gap:8px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-sm);padding:5px 8px}
+.ed-row.on{border-color:var(--amber)}
+.ed-row .eno{font-size:12px;color:var(--faint);font-variant-numeric:tabular-nums}
+.ed-row .ets{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:52px}
+.ed-row input{width:100%;min-width:0;background:none;border:0;outline:0;padding:5px 6px;border-radius:4px;font-size:13.5px}
+.ed-row input:focus{background:var(--raised)}
+.ed-row .acts{display:flex;gap:1px}
+.ed-paste{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-md);padding:12px 14px}
+.ed-paste summary{cursor:pointer;font-size:13.5px;font-weight:600}
+.ed-paste textarea{width:100%;margin:8px 0;background:var(--ink);color:var(--text);border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 10px;font:inherit;font-size:13px;resize:vertical}
+.ed-paste .note{margin:8px 0 0}
+
 /* popover */
 .pop{position:absolute;right:0;top:44px;width:320px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r-lg);padding:16px;z-index:5;box-shadow:0 12px 32px rgba(0,0,0,.35)}
 .pop h3{margin:0 0 10px;font-size:14px;font-weight:700}
@@ -255,6 +280,31 @@ button:disabled{cursor:default}
       </div>
       <div class="list" id="list"></div>
     </section>
+
+    <section class="editor" id="editor" hidden>
+      <div class="ed-top">
+        <button class="ghost" type="button" id="edBack"><span data-icon="arrow-left"></span><span class="lbl" data-t="back"></span></button>
+        <h2 class="ed-name" id="edName"></h2>
+        <button class="dl ed-export" type="button" id="edExport"></button>
+      </div>
+      <div class="wavebox" id="waveBox">
+        <canvas id="wave"></canvas>
+        <p class="ed-note" id="edNote"></p>
+      </div>
+      <div class="ed-bar">
+        <button class="icon-btn" type="button" id="edPlay" data-title="play"></button>
+        <span class="ed-time" id="edTime"></span>
+        <span class="spacer"></span>
+        <button class="ghost" type="button" id="edAdd"><span data-t="cutHere"></span></button>
+      </div>
+      <div class="ed-list" id="edList"></div>
+      <details class="ed-paste">
+        <summary data-t="pasteTitles"></summary>
+        <p class="note" data-t="pasteHint"></p>
+        <textarea id="edTitles" rows="5" spellcheck="false"></textarea>
+        <button class="btn2" type="button" id="edApplyTitles"><span data-t="applyTitles"></span></button>
+      </details>
+    </section>
   </main>
 </div>
 
@@ -269,7 +319,7 @@ button:disabled{cursor:default}
 
 <script>
 "use strict";
-const ICONS = {"clipboard-paste":"<path d=\"M11 14h10\"/> <path d=\"M16 4h2a2 2 0 0 1 2 2v1.344\"/> <path d=\"m17 18 4-4-4-4\"/> <path d=\"M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113\"/> <rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/>","x":"<path d=\"M18 6 6 18\"/> <path d=\"m6 6 12 12\"/>","arrow-right":"<path d=\"M5 12h14\"/> <path d=\"m12 5 7 7-7 7\"/>","music":"<path d=\"M9 18V5l12-2v13\"/> <circle cx=\"6\" cy=\"18\" r=\"3\"/> <circle cx=\"18\" cy=\"16\" r=\"3\"/>","clapperboard":"<path d=\"m12.296 3.464 3.02 3.956\"/> <path d=\"M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3z\"/> <path d=\"M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/> <path d=\"m6.18 5.276 3.1 3.899\"/>","list-video":"<path d=\"M21 5H3\"/> <path d=\"M10 12H3\"/> <path d=\"M10 19H3\"/> <path d=\"M15 12.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997a1 1 0 0 1-1.517-.86z\"/>","folder-open":"<path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\"/>","download":"<path d=\"M12 15V3\"/> <path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/> <path d=\"m7 10 5 5 5-5\"/>","check":"<path d=\"M20 6 9 17l-5-5\"/>","circle-alert":"<circle cx=\"12\" cy=\"12\" r=\"10\"/> <line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/> <line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/>","rotate-ccw":"<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/> <path d=\"M3 3v5h5\"/>","settings-2":"<path d=\"M14 17H5\"/> <path d=\"M19 7h-9\"/> <circle cx=\"17\" cy=\"17\" r=\"3\"/> <circle cx=\"7\" cy=\"7\" r=\"3\"/>","power":"<path d=\"M12 2v10\"/> <path d=\"M18.4 6.6a9 9 0 1 1-12.77.04\"/>","loader-circle":"<path d=\"M21 12a9 9 0 1 1-6.219-8.56\"/>","refresh-cw":"<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/> <path d=\"M21 3v5h-5\"/> <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/> <path d=\"M8 16H3v5\"/>","arrow-down-to-line":"<path d=\"M12 17V3\"/> <path d=\"m6 11 6 6 6-6\"/> <path d=\"M19 21H5\"/>","link":"<path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"/> <path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"/>"};
+const ICONS = {"clipboard-paste":"<path d=\"M11 14h10\"/> <path d=\"M16 4h2a2 2 0 0 1 2 2v1.344\"/> <path d=\"m17 18 4-4-4-4\"/> <path d=\"M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113\"/> <rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/>","x":"<path d=\"M18 6 6 18\"/> <path d=\"m6 6 12 12\"/>","arrow-right":"<path d=\"M5 12h14\"/> <path d=\"m12 5 7 7-7 7\"/>","arrow-left":"<path d=\"M19 12H5\"/> <path d=\"m12 19-7-7 7-7\"/>","play":"<path d=\"M6 4.5v15l12-7.5z\"/>","pause":"<path d=\"M7 4.5h3.5v15H7z\"/> <path d=\"M13.5 4.5H17v15h-3.5z\"/>","scissors":"<circle cx=\"6\" cy=\"6\" r=\"3\"/> <path d=\"M8.12 8.12 12 12\"/> <path d=\"M20 4 8.12 15.88\"/> <circle cx=\"6\" cy=\"18\" r=\"3\"/> <path d=\"M14.8 14.8 20 20\"/>","music":"<path d=\"M9 18V5l12-2v13\"/> <circle cx=\"6\" cy=\"18\" r=\"3\"/> <circle cx=\"18\" cy=\"16\" r=\"3\"/>","clapperboard":"<path d=\"m12.296 3.464 3.02 3.956\"/> <path d=\"M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3z\"/> <path d=\"M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/> <path d=\"m6.18 5.276 3.1 3.899\"/>","list-video":"<path d=\"M21 5H3\"/> <path d=\"M10 12H3\"/> <path d=\"M10 19H3\"/> <path d=\"M15 12.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997a1 1 0 0 1-1.517-.86z\"/>","folder-open":"<path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\"/>","download":"<path d=\"M12 15V3\"/> <path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/> <path d=\"m7 10 5 5 5-5\"/>","check":"<path d=\"M20 6 9 17l-5-5\"/>","circle-alert":"<circle cx=\"12\" cy=\"12\" r=\"10\"/> <line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/> <line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/>","rotate-ccw":"<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/> <path d=\"M3 3v5h5\"/>","settings-2":"<path d=\"M14 17H5\"/> <path d=\"M19 7h-9\"/> <circle cx=\"17\" cy=\"17\" r=\"3\"/> <circle cx=\"7\" cy=\"7\" r=\"3\"/>","power":"<path d=\"M12 2v10\"/> <path d=\"M18.4 6.6a9 9 0 1 1-12.77.04\"/>","loader-circle":"<path d=\"M21 12a9 9 0 1 1-6.219-8.56\"/>","refresh-cw":"<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/> <path d=\"M21 3v5h-5\"/> <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/> <path d=\"M8 16H3v5\"/>","arrow-down-to-line":"<path d=\"M12 17V3\"/> <path d=\"m6 11 6 6 6-6\"/> <path d=\"M19 21H5\"/>","link":"<path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"/> <path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"/>"};
 const icon = (n, cls = "") => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 
 /* ───────── strings ───────── */
@@ -285,6 +335,13 @@ const T = {
     fromComments: a => a ? `found in a comment by ${a}` : "found in the comments",
     findTracklist: "Look for a tracklist in the comments", searchingComments: "Reading the comments…",
     tracklistSource: "Where the tracks come from",
+    editSplit: "Split by ear", back: "Back", play: "Play", playFrom: "Play from here",
+    cutHere: "Cut here", trackName: "Track name", removeMark: "Remove this cut",
+    tracing: "Tracing the waveform…",
+    exportN: n => n === 1 ? "Export 1 track" : `Export ${n} tracks`,
+    pasteTitles: "Paste a list of titles",
+    pasteHint: "One per line, in order. For when the artist lists the tracks but gives no times: place the cuts by ear, and the names drop into place.",
+    applyTitles: "Apply the names",
     destinations: "Destinations", destHint: "A folder and the format it is for. Picking one sets both.",
     reading: "Reading link…",
     audio: "Audio", video: "Video", best: "Best", kbps: "kbps",
@@ -347,6 +404,13 @@ const T = {
     fromComments: a => a ? `trouvé dans un commentaire de ${a}` : "trouvé dans les commentaires",
     findTracklist: "Chercher une tracklist dans les commentaires", searchingComments: "Lecture des commentaires…",
     tracklistSource: "D’où viennent les morceaux",
+    editSplit: "Découper à l’oreille", back: "Retour", play: "Lecture", playFrom: "Lire à partir d’ici",
+    cutHere: "Couper ici", trackName: "Nom du morceau", removeMark: "Retirer cette coupe",
+    tracing: "Tracé de la waveform…",
+    exportN: n => n === 1 ? "Exporter 1 morceau" : `Exporter ${n} morceaux`,
+    pasteTitles: "Coller une liste de titres",
+    pasteHint: "Un par ligne, dans l’ordre. Pour quand l’artiste liste les morceaux sans donner les horaires : tu places les coupes à l’oreille, et les noms viennent se mettre en face.",
+    applyTitles: "Appliquer les noms",
     destinations: "Destinations", destHint: "Un dossier et le format qui va avec. En choisir un règle les deux.",
     reading: "Lecture du lien…",
     audio: "Audio", video: "Vidéo", best: "Max", kbps: "kbps",
@@ -422,7 +486,7 @@ const $ = s => document.querySelector(s);
    but never answers leaves the UI waiting forever: no error, no way back.
    `info` tracks the server's own 150s lookup timeout; the folder picker gets
    none, since it waits on a human. */
-const TIMEOUT = { default: 20000, info: 180000, poll: 10000, comments: 450000, none: 0 };
+const TIMEOUT = { default: 20000, info: 180000, poll: 10000, comments: 450000, peaks: 600000, none: 0 };
 
 /* A signal that also fires on timeout, without relying on AbortSignal.any. */
 function linkSignal(signal, ms) {
@@ -840,6 +904,7 @@ function updateRow(el, j, force) {
   const acts = [];
   if (active) acts.push(["cancel", "x", t().cancel]);
   if (j.status === "done") {
+    if (j.editable) acts.push(["edit", "scissors", t().editSplit]);
     acts.push(["reveal", "folder-open", t().reveal]);
     if (j.single) acts.push(["save", "download", t().saveCopy]);
   }
@@ -856,7 +921,7 @@ function updateRow(el, j, force) {
 }
 function renderJobs(force) {
   const list = $("#list");
-  $("#dls").hidden = S.jobs.length === 0;
+  $("#dls").hidden = S.jobs.length === 0 || editorOpen();   // the editor takes the page over
   $("#clearDone").hidden = !S.jobs.some(j => ["done", "error", "canceled"].includes(j.status));
   const ids = new Set(S.jobs.map(j => j.id));
   for (const [id, el] of rows) if (!ids.has(id)) { el.remove(); rows.delete(id); }
@@ -883,6 +948,7 @@ $("#list").addEventListener("click", async e => {
   const id = b.closest(".job").dataset.id, j = S.jobs.find(x => x.id === id); if (!j) return;
   const a = b.dataset.jobAction;
   try {
+    if (a === "edit") { openEditor(j); return; }
     if (a === "cancel") { await api(`/api/jobs/${id}/cancel`, {}); schedulePoll(150); }
     if (a === "reveal") await api(`/api/jobs/${id}/reveal`, {});
     if (a === "save") { const link = document.createElement("a"); link.href = `/api/jobs/${id}/file`; link.download = ""; document.body.appendChild(link); link.click(); link.remove(); }
@@ -1084,6 +1150,247 @@ document.addEventListener("drop", e => {
   e.preventDefault();
   const text = e.dataTransfer?.getData("text/uri-list") || e.dataTransfer?.getData("text/plain") || "";
   if (normalizeUrl(text)) lookup(text.split(/\r?\n/).find(l => normalizeUrl(l)) || text);
+});
+
+/* ───────── waveform editor ───────── */
+/* The overview comes from the drawing, the precision from playback: a cut is
+   placed at the playhead rather than by hitting a pixel. On a two-hour set one
+   pixel is seven seconds, so dragging alone could never be accurate enough. */
+const E = { job: null, peaks: [], duration: 0, marks: [], cur: 0, playing: false, sel: -1, drag: -1 };
+let edAudio = null, edRaf = 0;
+
+const cssVar = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim() || "#888";
+const editorOpen = () => !$("#editor").hidden;
+const fmtClock = s => fmtDur(Math.max(0, Math.round(s || 0))) || "0:00";
+
+async function openEditor(job) {
+  Object.assign(E, { job, peaks: [], marks: [], duration: job.duration || 0, cur: 0, playing: false, sel: -1, drag: -1 });
+  $("#editor").hidden = false;
+  $("#deck").hidden = true; $("#card").hidden = true; $("#dls").hidden = true;
+  $("#edName").textContent = job.files[0] || job.title;
+  $("#edNote").textContent = t().tracing; $("#edNote").hidden = false;
+  $("#edTitles").value = "";
+  renderEditor();
+  window.scrollTo({ top: 0 });
+
+  if (!edAudio) {
+    edAudio = new Audio();
+    edAudio.preload = "metadata";
+    edAudio.addEventListener("timeupdate", () => { if (E.drag < 0) E.cur = edAudio.currentTime; });
+    edAudio.addEventListener("play", () => { E.playing = true; renderEdBar(); tickWave(); });
+    edAudio.addEventListener("pause", () => { E.playing = false; renderEdBar(); });
+    edAudio.addEventListener("ended", () => { E.playing = false; renderEdBar(); });
+  }
+  edAudio.src = `/api/jobs/${job.id}/audio`;
+
+  try {
+    const d = await api(`/api/jobs/${job.id}/peaks`, {}, undefined, TIMEOUT.peaks);
+    if (!editorOpen() || E.job?.id !== job.id) return;    // closed, or moved on
+    E.peaks = d.peaks || [];
+    E.duration = d.duration || E.duration;
+    if (d.name) $("#edName").textContent = d.name;
+    $("#edNote").hidden = true;
+    // start from whatever the download already knew about this file
+    E.marks = (job.marks || []).length
+      ? job.marks.map(m => ({ start: m.start, title: m.title || "" }))
+      : [{ start: 0, title: "" }];
+    renderEditor();
+  } catch (e) {
+    if (aborted(e)) return;
+    $("#edNote").textContent = t().err[errCode(e)] || t().err.generic;
+    $("#edNote").hidden = false;
+  }
+}
+
+function closeEditor() {
+  if (edAudio) { edAudio.pause(); edAudio.removeAttribute("src"); edAudio.load(); }
+  cancelAnimationFrame(edRaf);
+  Object.assign(E, { job: null, peaks: [], marks: [], playing: false, sel: -1, drag: -1 });
+  $("#editor").hidden = true;
+  $("#deck").hidden = false;
+  renderCard(); renderJobs(true);
+}
+
+function tickWave() {
+  cancelAnimationFrame(edRaf);
+  const step = () => {
+    if (!editorOpen()) return;
+    drawWave(); renderEdBar();
+    if (E.playing) edRaf = requestAnimationFrame(step);
+  };
+  edRaf = requestAnimationFrame(step);
+}
+
+function drawWave() {
+  const cv = $("#wave");
+  if (!cv || !cv.clientWidth) return;
+  const ctx = cv.getContext("2d");
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  if (!E.peaks.length) return;
+  const mid = h / 2, span = h - 28, dur = E.duration || 1;
+  const head = (E.cur / dur) * w;
+  const dim = cssVar("--seg"), lit = cssVar("--amber");
+  for (let x = 0; x < w; x++) {
+    const p = E.peaks[Math.min(E.peaks.length - 1, Math.floor(x / w * E.peaks.length))] || 0;
+    const bh = Math.max(1, (p / 255) * span);
+    ctx.fillStyle = x <= head ? lit : dim;
+    ctx.fillRect(x, mid - bh / 2, 1, bh);
+  }
+  ctx.font = `600 11px ${cssVar("--font")}`;
+  ctx.textBaseline = "bottom";
+  E.marks.forEach((m, n) => {
+    const x = (m.start / dur) * w;
+    ctx.fillStyle = n === E.sel ? cssVar("--amber-hi") : cssVar("--text");
+    ctx.fillRect(x, 0, n === E.sel ? 2 : 1, h);
+    ctx.fillText(String(n + 1).padStart(2, "0"), Math.min(w - 18, x + 4), h - 4);
+  });
+  ctx.fillStyle = cssVar("--err");
+  ctx.fillRect(head - 1, 0, 2, h);
+}
+
+function renderEdBar() {
+  $("#edPlay").innerHTML = icon(E.playing ? "pause" : "play");
+  $("#edTime").textContent = `${fmtClock(E.cur)} / ${fmtClock(E.duration)}`;
+  const btn = $("#edExport");
+  btn.innerHTML = `${icon("scissors")}<span>${esc(t().exportN(E.marks.length))}</span>`;
+  btn.disabled = !E.marks.length || !E.peaks.length;
+}
+
+function renderEdList() {
+  $("#edList").innerHTML = E.marks.map((m, n) => `
+    <div class="ed-row${n === E.sel ? " on" : ""}" data-mark="${n}">
+      <span class="eno">${String(n + 1).padStart(3, "0")}</span>
+      <button type="button" class="icon-btn" data-mark-act="play" title="${esc(t().playFrom)}" aria-label="${esc(t().playFrom)}">${icon("play")}</button>
+      <input type="text" value="${esc(m.title)}" placeholder="${esc(t().trackName)}" data-mark-name aria-label="${esc(t().trackName)}">
+      <span class="acts"><span class="ets">${esc(fmtClock(m.start))}</span>
+        <button type="button" class="icon-btn" data-mark-act="del" title="${esc(t().removeMark)}" aria-label="${esc(t().removeMark)}">${icon("x")}</button></span>
+    </div>`).join("");
+}
+
+function renderEditor() { drawWave(); renderEdBar(); renderEdList(); }
+
+function seekTo(s) {
+  E.cur = Math.max(0, Math.min(s, E.duration || s));
+  if (edAudio) { try { edAudio.currentTime = E.cur; } catch {} }
+  drawWave(); renderEdBar();
+}
+
+function addMark(at) {
+  at = Math.max(0, Math.min(at, E.duration || at));
+  if (E.marks.some(m => Math.abs(m.start - at) < 0.5)) return;   // no stack of cuts on one spot
+  const fresh = { start: at, title: "" };
+  E.marks.push(fresh);
+  E.marks.sort((a, b) => a.start - b.start);
+  E.sel = E.marks.indexOf(fresh);
+  renderEditor();
+}
+
+const waveEl = $("#wave");
+const xToTime = x => {
+  const r = waveEl.getBoundingClientRect();
+  return r.width ? Math.max(0, Math.min(E.duration, (x - r.left) / r.width * E.duration)) : 0;
+};
+function markNear(clientX) {
+  const r = waveEl.getBoundingClientRect();
+  let best = -1, bestD = 7;
+  E.marks.forEach((m, n) => {
+    const d = Math.abs(r.left + (m.start / (E.duration || 1)) * r.width - clientX);
+    if (d <= bestD) { bestD = d; best = n; }
+  });
+  return best;
+}
+
+waveEl.addEventListener("pointerdown", e => {
+  if (!E.peaks.length) return;
+  const hit = markNear(e.clientX);
+  if (hit >= 0) {
+    E.drag = hit; E.sel = hit;
+    try { waveEl.setPointerCapture(e.pointerId); } catch {}
+    $("#waveBox").classList.add("grabbing");
+    renderEditor();
+  } else {
+    seekTo(xToTime(e.clientX));
+  }
+});
+waveEl.addEventListener("pointermove", e => {
+  if (E.drag < 0) return;
+  E.marks[E.drag].start = xToTime(e.clientX);
+  drawWave();
+});
+function endDrag(e) {
+  if (E.drag < 0) return;
+  const moved = E.marks[E.drag];
+  E.marks.sort((a, b) => a.start - b.start);
+  E.sel = E.marks.indexOf(moved);
+  E.drag = -1;
+  $("#waveBox").classList.remove("grabbing");
+  try { waveEl.releasePointerCapture(e.pointerId); } catch {}
+  renderEditor();
+}
+waveEl.addEventListener("pointerup", endDrag);
+waveEl.addEventListener("pointercancel", endDrag);
+
+$("#edBack").addEventListener("click", closeEditor);
+$("#edPlay").addEventListener("click", () => {
+  if (!edAudio || !E.peaks.length) return;
+  edAudio.paused ? edAudio.play().catch(() => {}) : edAudio.pause();
+});
+$("#edAdd").addEventListener("click", () => addMark(E.cur));
+
+$("#edList").addEventListener("click", e => {
+  const row = e.target.closest("[data-mark]"); if (!row) return;
+  const n = Number(row.dataset.mark);
+  const act = e.target.closest("[data-mark-act]")?.dataset.markAct;
+  if (act === "del") { E.marks.splice(n, 1); E.sel = -1; renderEditor(); return; }
+  if (act === "play") { E.sel = n; seekTo(E.marks[n].start); edAudio?.play().catch(() => {}); renderEditor(); return; }
+  // clicking the field itself must not rebuild the list, or the caret is lost
+  if (e.target.matches("[data-mark-name]")) { E.sel = n; drawWave(); return; }
+  E.sel = n; renderEditor();
+});
+$("#edList").addEventListener("input", e => {
+  const row = e.target.closest("[data-mark]");
+  if (row && e.target.matches("[data-mark-name]")) E.marks[Number(row.dataset.mark)].title = e.target.value;
+});
+
+/* For the case where an artist lists the titles but no timecodes: paste the
+   names, place the cuts by ear, and the two meet in the middle. */
+$("#edApplyTitles").addEventListener("click", () => {
+  const lines = $("#edTitles").value.split(/\r?\n/).map(s => s.trim().replace(/^\d{1,3}\s*[.)\-–]\s*/, "")).filter(Boolean);
+  if (!lines.length) return;
+  lines.forEach((line, n) => { if (E.marks[n]) E.marks[n].title = line; });
+  renderEditor();
+});
+
+$("#edExport").addEventListener("click", async () => {
+  const job = E.job;
+  if (!job || !E.marks.length) return;
+  const sorted = [...E.marks].sort((a, b) => a.start - b.start);
+  const marks = sorted.map((m, n) => ({
+    start: Math.round(m.start),
+    end: Math.round(n + 1 < sorted.length ? sorted[n + 1].start : (E.duration || 0)),
+    title: m.title || ""
+  })).filter(m => !m.end || m.end > m.start);
+  if (!marks.length) return;
+  const btn = $("#edExport");
+  btn.disabled = true;
+  try {
+    await api(`/api/jobs/${job.id}/split`, { marks });
+    closeEditor(); schedulePoll(200); clearActionError();
+  } catch (e) {
+    if (!aborted(e)) showActionError(e);
+    btn.disabled = false;
+  }
+});
+
+window.addEventListener("resize", () => { if (editorOpen()) drawWave(); });
+document.addEventListener("keydown", e => {
+  if (!editorOpen() || e.target.matches("input,textarea,summary")) return;
+  if (e.key === " ") { e.preventDefault(); $("#edPlay").click(); }
+  else if (e.key === "m" || e.key === "M") { e.preventDefault(); addMark(E.cur); }
 });
 
 /* ───────── boot ───────── */

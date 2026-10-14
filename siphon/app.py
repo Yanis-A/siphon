@@ -859,7 +859,7 @@ class Job:
                 "speed": self.speed, "eta": self.eta, "item": self.item, "items": self.items,
                 "failed": self.failed, "files": [Path(f).name for f in self.files], "size": size,
                 "single": len(self.files) == 1 and not self.playlist, "editable": editable,
-                "duration": self.duration,
+                "duration": self.duration, "marks": self.marks,
                 "error": {"code": self.error_code, "detail": self.error_detail} if self.error_code else None,
                 "created": self.created}
 
