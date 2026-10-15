@@ -27,6 +27,7 @@
   color-scheme:dark;
 }
 *{box-sizing:border-box}
+html{scroll-behavior:smooth}
 html,body{margin:0}
 body{background:var(--ink);color:var(--text);font:400 15px/1.5 var(--font);-webkit-font-smoothing:antialiased;min-height:100vh}
 button,input{font:inherit;color:inherit}
@@ -243,6 +244,7 @@ button:disabled{cursor:default}
   .pop{width:min(320px,calc(100vw - 32px))}
 }
 @media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
   *,*::before,*::after{animation:none !important;transition:none !important}
 }
 </style>
@@ -675,7 +677,7 @@ function goHome() {
   Object.assign(S, { url: "", info: null, fetchErr: null, fetching: false });
   urlInput.value = ""; syncClear(); closeSettings(false);
   renderFetchMsg(); renderCard();
-  window.scrollTo({ top: 0 });
+  window.scrollTo({ top: 0, behavior: "instant" });   // un changement de vue ne se defile pas
   urlInput.focus();
 }
 function syncClear() { $("#clearBtn").hidden = !urlInput.value; }
@@ -1409,7 +1411,7 @@ function openGuide() {
   $("#guide").hidden = false;
   $("#deck").hidden = true; $("#card").hidden = true; $("#dls").hidden = true;
   closeSettings(false);
-  window.scrollTo({ top: 0 });
+  window.scrollTo({ top: 0, behavior: "instant" });   // un changement de vue ne se defile pas
 }
 function closeGuide() {
   $("#guide").hidden = true;
@@ -1495,7 +1497,7 @@ async function openEditor(job) {
   $("#edNote").textContent = t().tracing; $("#edNote").hidden = false;
   $("#edTitles").value = "";
   renderEditor();
-  window.scrollTo({ top: 0 });
+  window.scrollTo({ top: 0, behavior: "instant" });   // un changement de vue ne se defile pas
 
   if (!edAudio) {
     edAudio = new Audio();
