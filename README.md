@@ -76,6 +76,12 @@ Delete the folder to uninstall.
 
 Download only what you have the right to use.
 
+## License
+
+Siphon is MIT licensed — do what you like with it, keep the notice, and it comes with no warranty. See [LICENSE](LICENSE).
+
+That covers Siphon's own code. The engine it drives keeps its own terms, listed below.
+
 ## Credits
 
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) (Unlicense), [Deno](https://deno.com) (MIT), FFmpeg via [imageio-ffmpeg](https://github.com/imageio/imageio-ffmpeg), [Lucide](https://lucide.dev) icons (ISC), [Archivo](https://github.com/Omnibus-Type/Archivo) typeface (SIL OFL 1.1).
