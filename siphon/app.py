@@ -21,6 +21,7 @@ import threading
 import time
 import urllib.request
 import uuid
+import zipfile
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -41,6 +42,9 @@ LOG_FILE = DATA / "siphon.log"
 
 DEFAULT_PORT = 8790
 MAX_PARALLEL = 3
+# Combien de temps un telechargement prive reste dans la liste une fois fini :
+# assez pour voir qu'il a abouti, pas assez pour s'y attarder.
+PRIVATE_GRACE = 8
 IDLE_EXIT_SECONDS = 10 * 60          # quit when no page has polled for this long and nothing runs
 ENGINE_UPDATE_EVERY = 20 * 3600      # yt-dlp: check roughly daily
 DENO_UPDATE_EVERY = 7 * 24 * 3600    # deno: weekly is plenty
@@ -614,7 +618,7 @@ class InfoError(Exception):
         self.code, self.detail = code, detail
 
 
-def fetch_info(engine: Engine, url: str) -> dict:
+def fetch_info(engine: Engine, url: str, private: bool = False) -> dict:
     engine.acquire()
     try:
         args = engine.base_args() + ["-J", "--flat-playlist", "--no-playlist", "--no-warnings", "--", url]
@@ -628,7 +632,7 @@ def fetch_info(engine: Engine, url: str) -> dict:
     if res.returncode != 0 or not res.stdout.strip():
         lines = [l for l in res.stderr.splitlines() if l.strip()]
         detail = clean_error(lines)
-        log.info("info failed for %s: %s", url, detail)
+        log.info("info failed for %s: %s", "(prive)" if private else url, "" if private else detail)
         raise InfoError(classify_error(detail or res.stderr), detail)
     try:
         data = json.loads(res.stdout)
@@ -825,6 +829,13 @@ class Job:
         self.format = params["format"]             # mp3 wav flac m4a | mp4
         self.quality = params.get("quality")       # bitrate | height | "best"
         self.playlist = bool(params.get("playlist"))
+        # Video sans le son : on retire la piste audio une fois le fichier la.
+        self.mute = bool(params.get("mute")) and self.mode == "video"
+        # Prive : ni dans le journal, ni dans le fichier, ni longtemps dans la liste.
+        self.private = bool(params.get("private"))
+        # Une playlist emballee dans un zip plutot que des fichiers en vrac.
+        self.zip = bool(params.get("zip")) and self.playlist
+        self.ended = 0.0                            # quand la tache s'est terminee
         self.marks = params.get("marks") or []      # cut points, when the file is to be split
         self.split = bool(self.marks)
         self.duration = int(params.get("duration") or 0)
@@ -873,18 +884,37 @@ class Job:
     def public(self) -> dict:
         size = self.total_size()
         src = self.source_file()
-        editable = bool(src and not self.playlist and self.status == "done"
+        editable = bool(src and not self.playlist and not self.private and self.status == "done"
                         and Path(src).suffix.lower() in MEDIA_TYPES)
-        return {"id": self.id, "url": self.url, "title": self.title, "thumbnail": self.thumbnail,
+        # Un telechargement prive ne montre ni son adresse, ni son titre, ni sa
+        # vignette : la page affiche un libelle generique a la place.
+        hidden = self.private
+        return {"id": self.id, "url": "" if hidden else self.url,
+                "title": "" if hidden else self.title, "thumbnail": "" if hidden else self.thumbnail,
+                "private": self.private, "mute": self.mute, "zip": self.zip,
                 "mode": self.mode, "format": self.format, "quality": self.quality,
                 "playlist": self.playlist, "split": self.split,
                 "status": self.status, "stage": self.stage, "percent": round(self.percent, 1),
                 "speed": self.speed, "eta": self.eta, "item": self.item, "items": self.items,
-                "failed": self.failed, "files": [Path(f).name for f in self.files], "size": size,
+                # en prive on cache les noms, pas leur nombre : la page s'en sert
+                # pour distinguer « enregistre » de « deja present »
+                "failed": self.failed,
+                "files": [""] * len(self.files) if hidden else [Path(f).name for f in self.files],
+                "size": size,
                 "single": len(self.files) == 1 and not self.playlist, "editable": editable,
                 "duration": self.duration, "marks": self.marks,
                 "error": {"code": self.error_code, "detail": self.error_detail} if self.error_code else None,
                 "created": self.created}
+
+
+# Ce qu'un telechargement prive retire des tags : l'adresse d'origine, que
+# --embed-metadata ecrit dans comment et purl, et la description, qui contient
+# souvent des liens et designe la source presque aussi surement. Le titre,
+# l'artiste et la date restent : ils ne disent pas d'ou vient le fichier.
+# Verifie sur un vrai telechargement : plus aucune adresse dans les tags.
+PRIVATE_META: list[str] = []
+for _champ in ("comment", "purl", "description", "synopsis"):
+    PRIVATE_META += ["--parse-metadata", f":(?P<meta_{_champ}>)"]
 
 
 def build_job_args(engine: Engine, job: Job) -> list[str]:
@@ -921,8 +951,14 @@ def build_job_args(engine: Engine, job: Job) -> list[str]:
                   "--ppa", "ThumbnailsConvertor+FFmpeg_o:-vf \"crop='min(iw,ih)':'min(iw,ih)'\""]
     else:
         res = "res" if job.quality in (None, "best") else f"res:{job.quality}"
-        a += ["-f", "bv*+ba/b", "-S", f"lang,{res},fps,vcodec:h264,acodec:aac",
+        # Sans le son, inutile de rapatrier la piste audio quand le site en
+        # propose une separee : on prend la video seule, et sinon le fichier
+        # complet, dont le son sera retire apres coup.
+        fmt = "bv/b" if job.mute else "bv*+ba/b"
+        a += ["-f", fmt, "-S", f"lang,{res},fps,vcodec:h264,acodec:aac",
               "--merge-output-format", "mp4", "--remux-video", "mp4"]
+    if job.private:
+        a += PRIVATE_META
     return a + ["--", job.url]
 
 
@@ -951,7 +987,16 @@ class JobManager:
         return job
 
     def list(self) -> list[dict]:
+        now = time.time()
         with self.lock:
+            # Un telechargement prive termine ne s'attarde pas : apres quelques
+            # secondes il quitte la liste, et la memoire avec, adresse comprise.
+            expired = [i for i, j in self.jobs.items()
+                       if j.private and j.ended and now - j.ended > PRIVATE_GRACE]
+            for i in expired:
+                del self.jobs[i]
+            if expired:
+                self.order = [i for i in self.order if i in self.jobs]
             return [self.jobs[i].public() for i in self.order if i in self.jobs]
 
     def get(self, job_id: str) -> Job | None:
@@ -998,7 +1043,13 @@ class JobManager:
             Path(job.folder).mkdir(parents=True, exist_ok=True)
             job.tmp.mkdir(parents=True, exist_ok=True)
             args = build_job_args(self.engine, job)
-            log.info("job %s: %s", job.id, subprocess.list2cmdline(args) if IS_WIN else " ".join(args))
+            if job.private:
+                # Le journal est un fichier qui survit aux redemarrages et garde
+                # l'adresse de chaque telechargement : un prive n'y laisse que
+                # son existence.
+                log.info("job %s: telechargement prive (%s)", job.id, job.mode)
+            else:
+                log.info("job %s: %s", job.id, subprocess.list2cmdline(args) if IS_WIN else " ".join(args))
             popen_kw = dict(stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                             text=True, encoding="utf-8", errors="replace", bufsize=1, env=child_env())
             if IS_WIN:
@@ -1030,6 +1081,10 @@ class JobManager:
             elif rc == 0 or (job.playlist and job.files):
                 if job.marks and job.files and not job.playlist:
                     self._split(job)
+                if job.mute and not job.cancel_requested:
+                    self._mute(job)
+                if job.zip and not job.cancel_requested:
+                    self._zip(job)
                 if job.cancel_requested:
                     job.status, job.stage = "canceled", "canceled"
                 else:
@@ -1039,17 +1094,44 @@ class JobManager:
                 job.status, job.stage = "error", "error"
                 job.error_code = classify_error(detail or "\n".join(tail))
                 job.error_detail = detail
-                log.info("job %s failed (%s): %s", job.id, rc, "\n".join(tail[-8:]))
+                # la fin de la sortie de yt-dlp cite souvent l'adresse ou l'identifiant
+                log.info("job %s failed (%s): %s", job.id, rc,
+                         "(prive)" if job.private else "\n".join(tail[-8:]))
         except Exception as exc:
             log.exception("job %s crashed", job.id)
             job.status, job.stage = "error", "error"
             job.error_code, job.error_detail = "engine", str(exc)[:300]
         finally:
             job.speed = job.eta = None
+            job.ended = time.time()
             if using_engine:
                 self.engine.release()
             remove_tree(job.tmp)
             self.slots.release()
+
+    def _mute(self, job: Job) -> None:
+        """Retire le son de chaque video telechargee."""
+        ff = self.engine.ffmpeg()
+        if not ff:
+            log.info("job %s: pas de FFmpeg, le son reste", job.id)
+            return
+        job.stage = "muting"
+        for f in job.files:
+            if Path(f).suffix.lower() in (".mp4", ".mkv", ".mov", ".webm") and os.path.isfile(f):
+                if not strip_audio(ff, f):
+                    log.info("job %s: impossible de retirer le son de %s", job.id,
+                             "(prive)" if job.private else Path(f).name)
+
+    def _zip(self, job: Job) -> None:
+        """Emballe la playlist dans un zip, a la place des fichiers en vrac."""
+        job.stage = "zipping"
+        try:
+            archive = zip_files(job.files, Path(job.folder))
+        except OSError as exc:
+            log.warning("job %s: zip impossible: %s", job.id, exc)
+            return
+        if archive:
+            job.files = [archive]
 
     def run_split(self, job: Job, marks: list[dict], source: str) -> None:
         """Re-split a file that was already downloaded, from the editor.
@@ -1086,7 +1168,8 @@ class JobManager:
         try:
             out_dir.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
-            log.warning("job %s: cannot create %s: %s", job.id, out_dir, exc)
+            log.warning("job %s: cannot create %s: %s", job.id,
+                        "(prive)" if job.private else out_dir, exc)
             return
         job.stage, job.items, job.percent = "splitting", len(marks), 0.0
         pieces = []
@@ -1110,7 +1193,8 @@ class JobManager:
                 pieces.append(str(target))
             else:
                 job.failed += 1
-                log.info("job %s: piece %s failed: %s", job.id, n, (res.stderr or "")[-200:])
+                log.info("job %s: piece %s failed: %s", job.id, n,
+                         "(prive)" if job.private else (res.stderr or "")[-200:])
         job.files.extend(p for p in pieces if p not in job.files)
         job.percent = 100.0
         log.info("job %s: %s pieces from %s marks", job.id, len(pieces), len(marks))
@@ -1182,6 +1266,61 @@ def kill_tree(proc: subprocess.Popen) -> None:
             proc.kill()
         except Exception:
             pass
+
+
+def strip_audio(ff: str, path: str) -> bool:
+    """Retire la piste son d'une video, sans reencoder.
+
+    Sur TikTok ou les Reels, l'image et le son arrivent souvent dans un seul
+    fichier : on ne peut pas ne pas telecharger le son, on le retire apres.
+    Une copie de flux, donc instantanee et sans perte. Le reste (image,
+    sous-titres) est garde tel quel.
+    """
+    src = Path(path)
+    tmp = src.with_name(f"{src.stem}.sans-son{src.suffix}")
+    try:
+        res = run_quiet([ff, "-nostdin", "-loglevel", "error", "-y", "-i", str(src),
+                         "-map", "0", "-map", "-0:a", "-c", "copy", str(tmp)], timeout=600)
+    except subprocess.TimeoutExpired:
+        tmp.unlink(missing_ok=True)
+        return False
+    if res.returncode == 0 and tmp.is_file() and tmp.stat().st_size:
+        os.replace(tmp, src)
+        return True
+    tmp.unlink(missing_ok=True)
+    return False
+
+
+def zip_files(files: list[str], root: Path) -> str | None:
+    """Emballe les fichiers d'une playlist dans un zip, a cote de leur dossier.
+
+    On n'emballe et on ne supprime que les fichiers que ce telechargement a
+    produits : si un dossier du meme nom existait deja avec autre chose
+    dedans, il n'y est pas touche, et le dossier n'est retire que s'il est
+    vide. Sans compression, puisque l'audio et la video le sont deja : le
+    deflate couterait du temps pour ne rien gagner.
+    """
+    paths = [Path(f) for f in files if os.path.isfile(f)]
+    if not paths:
+        return None
+    root = root.resolve()
+    folder = paths[0].parent
+    # garde-fou : jamais rien emballer ni supprimer hors du dossier choisi
+    if not all(p.resolve().is_relative_to(root) for p in paths):
+        return None
+    archive = folder.parent / f"{folder.name}.zip"
+    tmp = archive.with_name(archive.name + ".part")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED) as z:
+        for p in sorted(paths):
+            z.write(p, f"{folder.name}/{p.name}")
+    os.replace(tmp, archive)
+    for p in paths:
+        p.unlink(missing_ok=True)
+    try:
+        folder.rmdir()                     # seulement s'il est vide
+    except OSError:
+        pass
+    return str(archive)
 
 
 def remove_tree(path: Path) -> None:
@@ -1466,7 +1605,7 @@ class Handler(BaseHTTPRequestHandler):
             if len(url) > 2048 or not URL_RE.match(url):
                 return self._json(400, {"error": "invalid_url"})
             try:
-                return self._json(200, {"info": fetch_info(STATE.engine, url)})
+                return self._json(200, {"info": fetch_info(STATE.engine, url, bool(body.get("private")))})
             except InfoError as e:
                 return self._json(422, {"error": e.code, "detail": e.detail})
 
@@ -1502,10 +1641,13 @@ class Handler(BaseHTTPRequestHandler):
                 count = max(0, int(body.get("count") or 0))
             except (TypeError, ValueError):
                 count = 0
+            private = bool(body.get("private"))
             job = STATE.jobs.add({
                 "url": url, **preset,
-                "title": str(body.get("title") or "")[:300],
-                "thumbnail": thumb if thumb.startswith(("http://", "https://")) else "",
+                "mute": bool(body.get("mute")), "private": private, "zip": bool(body.get("zip")),
+                # un prive ne garde meme pas son titre en memoire
+                "title": "" if private else str(body.get("title") or "")[:300],
+                "thumbnail": "" if private or not thumb.startswith(("http://", "https://")) else thumb,
                 "playlist": bool(body.get("playlist")), "marks": clean_marks(body.get("marks")),
                 "duration": body.get("duration"), "count": count, "folder": dest["folder"],
             })

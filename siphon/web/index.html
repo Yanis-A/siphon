@@ -371,7 +371,7 @@ button:disabled{cursor:default}
 
 <script>
 "use strict";
-const ICONS = {"clipboard-paste":"<path d=\"M11 14h10\"/> <path d=\"M16 4h2a2 2 0 0 1 2 2v1.344\"/> <path d=\"m17 18 4-4-4-4\"/> <path d=\"M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113\"/> <rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/>","x":"<path d=\"M18 6 6 18\"/> <path d=\"m6 6 12 12\"/>","arrow-right":"<path d=\"M5 12h14\"/> <path d=\"m12 5 7 7-7 7\"/>","arrow-left":"<path d=\"M19 12H5\"/> <path d=\"m12 19-7-7 7-7\"/>","play":"<path d=\"M6 4.5v15l12-7.5z\"/>","pause":"<path d=\"M7 4.5h3.5v15H7z\"/> <path d=\"M13.5 4.5H17v15h-3.5z\"/>","scissors":"<circle cx=\"6\" cy=\"6\" r=\"3\"/> <path d=\"M8.12 8.12 12 12\"/> <path d=\"M20 4 8.12 15.88\"/> <circle cx=\"6\" cy=\"18\" r=\"3\"/> <path d=\"M14.8 14.8 20 20\"/>","plus":"<path d=\"M5 12h14\"/> <path d=\"M12 5v14\"/>","minus":"<path d=\"M5 12h14\"/>","circle-help":"<circle cx=\"12\" cy=\"12\" r=\"10\"/> <path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"/> <path d=\"M12 17h.01\"/>","music":"<path d=\"M9 18V5l12-2v13\"/> <circle cx=\"6\" cy=\"18\" r=\"3\"/> <circle cx=\"18\" cy=\"16\" r=\"3\"/>","clapperboard":"<path d=\"m12.296 3.464 3.02 3.956\"/> <path d=\"M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3z\"/> <path d=\"M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/> <path d=\"m6.18 5.276 3.1 3.899\"/>","list-video":"<path d=\"M21 5H3\"/> <path d=\"M10 12H3\"/> <path d=\"M10 19H3\"/> <path d=\"M15 12.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997a1 1 0 0 1-1.517-.86z\"/>","folder-open":"<path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\"/>","download":"<path d=\"M12 15V3\"/> <path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/> <path d=\"m7 10 5 5 5-5\"/>","check":"<path d=\"M20 6 9 17l-5-5\"/>","circle-alert":"<circle cx=\"12\" cy=\"12\" r=\"10\"/> <line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/> <line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/>","rotate-ccw":"<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/> <path d=\"M3 3v5h5\"/>","settings-2":"<path d=\"M14 17H5\"/> <path d=\"M19 7h-9\"/> <circle cx=\"17\" cy=\"17\" r=\"3\"/> <circle cx=\"7\" cy=\"7\" r=\"3\"/>","power":"<path d=\"M12 2v10\"/> <path d=\"M18.4 6.6a9 9 0 1 1-12.77.04\"/>","loader-circle":"<path d=\"M21 12a9 9 0 1 1-6.219-8.56\"/>","refresh-cw":"<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/> <path d=\"M21 3v5h-5\"/> <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/> <path d=\"M8 16H3v5\"/>","arrow-down-to-line":"<path d=\"M12 17V3\"/> <path d=\"m6 11 6 6 6-6\"/> <path d=\"M19 21H5\"/>","link":"<path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"/> <path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"/>"};
+const ICONS = {"clipboard-paste":"<path d=\"M11 14h10\"/> <path d=\"M16 4h2a2 2 0 0 1 2 2v1.344\"/> <path d=\"m17 18 4-4-4-4\"/> <path d=\"M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113\"/> <rect x=\"8\" y=\"2\" width=\"8\" height=\"4\" rx=\"1\"/>","x":"<path d=\"M18 6 6 18\"/> <path d=\"m6 6 12 12\"/>","arrow-right":"<path d=\"M5 12h14\"/> <path d=\"m12 5 7 7-7 7\"/>","arrow-left":"<path d=\"M19 12H5\"/> <path d=\"m12 19-7-7 7-7\"/>","play":"<path d=\"M6 4.5v15l12-7.5z\"/>","pause":"<path d=\"M7 4.5h3.5v15H7z\"/> <path d=\"M13.5 4.5H17v15h-3.5z\"/>","scissors":"<circle cx=\"6\" cy=\"6\" r=\"3\"/> <path d=\"M8.12 8.12 12 12\"/> <path d=\"M20 4 8.12 15.88\"/> <circle cx=\"6\" cy=\"18\" r=\"3\"/> <path d=\"M14.8 14.8 20 20\"/>","plus":"<path d=\"M5 12h14\"/> <path d=\"M12 5v14\"/>","minus":"<path d=\"M5 12h14\"/>","circle-help":"<circle cx=\"12\" cy=\"12\" r=\"10\"/> <path d=\"M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3\"/> <path d=\"M12 17h.01\"/>","music":"<path d=\"M9 18V5l12-2v13\"/> <circle cx=\"6\" cy=\"18\" r=\"3\"/> <circle cx=\"18\" cy=\"16\" r=\"3\"/>","clapperboard":"<path d=\"m12.296 3.464 3.02 3.956\"/> <path d=\"M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3z\"/> <path d=\"M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/> <path d=\"m6.18 5.276 3.1 3.899\"/>","list-video":"<path d=\"M21 5H3\"/> <path d=\"M10 12H3\"/> <path d=\"M10 19H3\"/> <path d=\"M15 12.003a1 1 0 0 1 1.517-.859l4.997 2.997a1 1 0 0 1 0 1.718l-4.997 2.997a1 1 0 0 1-1.517-.86z\"/>","folder-open":"<path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\"/>","download":"<path d=\"M12 15V3\"/> <path d=\"M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4\"/> <path d=\"m7 10 5 5 5-5\"/>","check":"<path d=\"M20 6 9 17l-5-5\"/>","circle-alert":"<circle cx=\"12\" cy=\"12\" r=\"10\"/> <line x1=\"12\" x2=\"12\" y1=\"8\" y2=\"12\"/> <line x1=\"12\" x2=\"12.01\" y1=\"16\" y2=\"16\"/>","rotate-ccw":"<path d=\"M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8\"/> <path d=\"M3 3v5h5\"/>","settings-2":"<path d=\"M14 17H5\"/> <path d=\"M19 7h-9\"/> <circle cx=\"17\" cy=\"17\" r=\"3\"/> <circle cx=\"7\" cy=\"7\" r=\"3\"/>","power":"<path d=\"M12 2v10\"/> <path d=\"M18.4 6.6a9 9 0 1 1-12.77.04\"/>","loader-circle":"<path d=\"M21 12a9 9 0 1 1-6.219-8.56\"/>","refresh-cw":"<path d=\"M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8\"/> <path d=\"M21 3v5h-5\"/> <path d=\"M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16\"/> <path d=\"M8 16H3v5\"/>","arrow-down-to-line":"<path d=\"M12 17V3\"/> <path d=\"m6 11 6 6 6-6\"/> <path d=\"M19 21H5\"/>","link":"<path d=\"M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71\"/> <path d=\"M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71\"/>","volume-x":"<path d=\"M11 4.702a.705.705 0 0 0-1.203-.498L6.413 7.587A1.4 1.4 0 0 1 5.416 8H3a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2.416a1.4 1.4 0 0 1 .997.413l3.383 3.384A.705.705 0 0 0 11 19.298z\"/> <line x1=\"22\" x2=\"16\" y1=\"9\" y2=\"15\"/> <line x1=\"16\" x2=\"22\" y1=\"9\" y2=\"15\"/>","eye-off":"<path d=\"M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49\"/> <path d=\"M14.084 14.158a3 3 0 0 1-4.242-4.242\"/> <path d=\"M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143\"/> <path d=\"m2 2 20 20\"/>","file-archive":"<path d=\"M10 12v-1\"/> <path d=\"M10 18v-2\"/> <path d=\"M10 7V6\"/> <path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/> <path d=\"M15.5 22H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v16a2 2 0 0 0 .274 1.01\"/> <circle cx=\"10\" cy=\"20\" r=\"2\"/>"};
 const icon = (n, cls = "") => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 
 /* ───────── strings ───────── */
@@ -385,6 +385,10 @@ const T = {
     wavNoCover: "WAV cannot carry cover art. FLAC is lossless too, keeps the cover, and is smaller.",
     destination: "Destination", addDestination: "Add a folder", removeDest: "Remove",
     splitChapters: "Split into tracks", tracksN: n => `${n} tracks`,
+    muteToggle: "No sound", muteHint: "video only",
+    privateToggle: "Private", privateHint: "no trace", privateTip: "Nothing kept in the list, the log or the file's tags",
+    zipToggle: "Zip archive", zipHint: "a single file",
+    privateTitle: "Private download", noSound: "without sound",
     fromChapters: "from the site's markers", fromDescription: "read from the description",
     fromComments: a => a ? `found in a comment by ${a}` : "found in the comments",
     findTracklist: "Look for a tracklist in the comments", searchingComments: "Reading the comments…",
@@ -404,7 +408,7 @@ const T = {
     keepAlive: "Keep Siphon running",
     keepAliveHint: "Siphon normally quits ten minutes after you close its tab. Keep it running for the browser extension, which needs it to answer.",
     cookies: "Sign in through a browser", cookiesOff: "Off",
-    cookiesHint: "Siphon downloads on its own and is signed in to nothing, which is why age-restricted, members-only and private links fail. Point it at a browser and it reads that browser's session from disk — nothing is exported, nothing leaves this machine.",
+    cookiesHint: "Siphon downloads on its own and is signed in to nothing, which is why age-restricted, members-only and private links fail. Point it at a browser and it reads that browser's session from disk: nothing is exported, nothing leaves this machine.",
     cookiesOn: b => `Siphon now acts as you are signed in on ${b}. Your own account carries the activity, so leave this off when you do not need it.`,
     reading: "Reading link…",
     audio: "Audio", video: "Video", best: "Best", kbps: "kbps",
@@ -427,6 +431,7 @@ const T = {
       download: "Downloading", download_video: "Downloading video", download_audio: "Downloading audio", download_media: "Downloading",
       merging: "Merging video and audio", converting: "Converting", cover: "Adding cover", tagging: "Writing tags",
       splitting: "Splitting into tracks",
+      muting: "Removing sound", zipping: "Zipping",
       finishing: "Saving", processing: "Processing", done: "Saved", canceled: "Canceled"
     },
     err: {
@@ -467,6 +472,10 @@ const T = {
     wavNoCover: "Le WAV ne peut pas porter de pochette. Le FLAC est aussi sans perte, la garde, et pèse moins lourd.",
     destination: "Destination", addDestination: "Ajouter un dossier", removeDest: "Retirer",
     splitChapters: "Découper en morceaux", tracksN: n => `${n} morceaux`,
+    muteToggle: "Sans le son", muteHint: "image seule",
+    privateToggle: "Privé", privateHint: "aucune trace", privateTip: "Rien de gardé dans la liste, le journal ni les tags du fichier",
+    zipToggle: "Archiver en zip", zipHint: "un seul fichier",
+    privateTitle: "Téléchargement privé", noSound: "sans le son",
     fromChapters: "d’après les marqueurs du site", fromDescription: "lu dans la description",
     fromComments: a => a ? `trouvé dans un commentaire de ${a}` : "trouvé dans les commentaires",
     findTracklist: "Chercher une tracklist dans les commentaires", searchingComments: "Lecture des commentaires…",
@@ -486,7 +495,7 @@ const T = {
     keepAlive: "Garder Siphon actif",
     keepAliveHint: "Siphon se ferme normalement dix minutes après que tu quittes son onglet. Garde-le actif pour l’extension navigateur, qui a besoin qu’il réponde.",
     cookies: "Se connecter via un navigateur", cookiesOff: "Désactivé",
-    cookiesHint: "Siphon télécharge de son côté et n’est connecté à rien : c’est pour ça que les contenus avec limite d’âge, réservés aux membres ou privés échouent. Désigne un navigateur et il lira sa session sur le disque — rien n’est exporté, rien ne quitte cette machine.",
+    cookiesHint: "Siphon télécharge de son côté et n’est connecté à rien : c’est pour ça que les contenus avec limite d’âge, réservés aux membres ou privés échouent. Désigne un navigateur et il lira sa session sur le disque : rien n’est exporté, rien ne quitte cette machine.",
     cookiesOn: b => `Siphon agit maintenant comme ta session ${b}. C’est ton compte qui porte l’activité : laisse ça désactivé quand tu n’en as pas besoin.`,
     reading: "Lecture du lien…",
     audio: "Audio", video: "Vidéo", best: "Max", kbps: "kbps",
@@ -509,6 +518,7 @@ const T = {
       download: "Téléchargement", download_video: "Téléchargement de la vidéo", download_audio: "Téléchargement de l’audio", download_media: "Téléchargement",
       merging: "Assemblage vidéo et audio", converting: "Conversion", cover: "Ajout de la pochette", tagging: "Écriture des tags",
       splitting: "Découpage en morceaux",
+      muting: "Retrait du son", zipping: "Création du zip",
       finishing: "Enregistrement", processing: "Traitement", done: "Enregistré", canceled: "Annulé"
     },
     err: {
@@ -554,7 +564,10 @@ const MP3_RATES = [320, 256, 192, 128];
 const memo = Object.assign({ audio: { format: "mp3", quality: 320 }, video: { format: "mp4", quality: "best" } }, store.get("memo", {}));
 const S = { url: "", info: null, fetching: false, fetchErr: null, actionErr: null, jobs: [], engine: {},
             folder: "", dests: { items: [], active: "" }, split: false, searching: false,
-            sourceKey: "", flashMarks: false, offline: false, misses: 0, addedAt: 0 };
+            sourceKey: "", flashMarks: false, offline: false, misses: 0, addedAt: 0,
+            // Options d'un telechargement. Jamais memorisees : un mode prive qui
+            // survivrait a la fermeture laisserait lui-meme une trace.
+            mute: false, private: false, zip: false };
 let lookupCtl = null;
 const t = () => T[lang];
 const $ = s => document.querySelector(s);
@@ -630,7 +643,8 @@ function normalizeUrl(raw) {
 }
 function badgeText(j) {
   if (j.mode === "audio") return j.format === "mp3" ? `MP3 ${j.quality}` : j.format.toUpperCase();
-  return j.quality === "best" || !j.quality ? "MP4" : `MP4 ${j.quality}p`;
+  const base = j.quality === "best" || !j.quality ? "MP4" : `MP4 ${j.quality}p`;
+  return j.mute ? `${base} · ${t().noSound}` : base;
 }
 
 /* ───────── static text ───────── */
@@ -659,7 +673,8 @@ async function lookup(raw) {
   Object.assign(S, { url, info: null, fetchErr: null, fetching: true, split: false, searching: false, sourceKey: "" });
   renderFetchMsg(); renderCard();
   try {
-    const { info } = await api("/api/info", { url }, lookupCtl.signal, TIMEOUT.info);
+    // en prive, l'analyse elle-meme ne doit pas laisser l'adresse au journal
+    const { info } = await api("/api/info", { url, private: S.private }, lookupCtl.signal, TIMEOUT.info);
     if (S.url !== url) return;
     S.info = info;
   } catch (e) {
@@ -809,6 +824,8 @@ function renderOptions() {
   const p = effectivePreset(), mode = p.mode;
   const canVideo = i.hasVideo !== false, canAudio = i.hasAudio !== false;
   const choice = (group, v, label, on, hint) => `<button type="button" class="choice" role="radio" aria-checked="${on}" data-group="${esc(group)}" data-v="${esc(v)}">${esc(label)}${hint ? `<span class="hint">${esc(hint)}</span>` : ""}</button>`;
+  // Un interrupteur, sur le modele de celui du decoupage.
+  const sw = (key, ico, label, hint, tip) => `<button type="button" class="choice" role="switch" aria-checked="${!!S[key]}" data-toggle="${key}"${tip ? ` title="${esc(tip)}"` : ""}>${icon(ico, "sm")}${esc(label)}<span class="hint">${esc(hint)}</span></button>`;
   let rows = "";
   if (mode === "audio") {
     rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().formatLabel)}">${["mp3", "wav", "flac", "m4a"].map(f => choice("audio", f, f.toUpperCase(), p.format === f)).join("")}</div>`;
@@ -817,6 +834,7 @@ function renderOptions() {
     if (p.format === "wav") rows += `<p class="row-label" style="margin:0">${esc(t().wavNoCover)}</p>`;
   } else {
     const q = effectiveQuality();
+    rows += `<div class="choices">${sw("mute", "volume-x", t().muteToggle, t().muteHint)}</div>`;
     rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().qualityLabel)}">${videoChoices().map(c => choice("quality", c.v, c.label, q === c.v, c.hint)).join("")}</div>`;
   }
   // the cut points are already known, from the site, the description or a comment
@@ -835,6 +853,10 @@ function renderOptions() {
     const busy = S.searching;
     rows += `<div class="choices"><button type="button" class="choice" data-action="find-tracklist"${busy ? " disabled" : ""}>${icon(busy ? "loader-circle" : "list-video", busy ? "sm spin" : "sm")}${esc(busy ? t().searchingComments : t().findTracklist)}</button></div>`;
   }
+  // Le zip n'a de sens que pour une playlist ; le mode prive vaut pour tout.
+  const extra = [sw("private", "eye-off", t().privateToggle, t().privateHint, t().privateTip)];
+  if (i.kind === "playlist") extra.unshift(sw("zip", "file-archive", t().zipToggle, t().zipHint));
+  rows += `<div class="choices">${extra.join("")}</div>`;
   const chips = S.dests.items.map(d =>
     `<button type="button" class="choice" role="radio" aria-checked="${d.id === S.dests.active}" data-dest="${esc(d.id)}" title="${esc(d.folder)}">${esc(d.name)}<span class="hint">${esc(badgeText(d))}</span></button>`).join("");
   op.innerHTML = `
@@ -892,7 +914,8 @@ function downloadLabel(mode) {
   const p = effectivePreset();
   if (mode === "audio") return p.format === "mp3" ? `${t().download} MP3 ${p.quality} ${t().kbps}` : `${t().download} ${p.format.toUpperCase()}`;
   const q = effectiveQuality();
-  return q === "best" ? `${t().download} MP4` : `${t().download} MP4 ${q}p`;
+  const base = q === "best" ? `${t().download} MP4` : `${t().download} MP4 ${q}p`;
+  return S.mute ? `${base} ${t().noSound}` : base;
 }
 
 $("#opts").addEventListener("click", e => {
@@ -901,7 +924,7 @@ $("#opts").addEventListener("click", e => {
   const chip = e.target.closest("[data-dest]");
   if (chip) { selectDest(chip.dataset.dest); return; }
   const tog = e.target.closest("[data-toggle]");
-  if (tog) { S.split = !S.split; renderOptions(); return; }
+  if (tog) { const k = tog.dataset.toggle; S[k] = !S[k]; renderOptions(); return; }
   const src = e.target.closest("[data-source]");
   if (src) { S.sourceKey = src.dataset.source; renderOptions(); return; }
   const c = e.target.closest(".choice[data-group]");
@@ -925,7 +948,10 @@ async function startDownload() {
     playlist: i.kind === "playlist", count: i.count || 0,
     destination: S.dests.active, marks: S.split && canSplit() ? currentMarks() : [],
     format: mode === "audio" ? p.format : "mp4",
-    quality: mode === "audio" ? (p.format === "mp3" ? p.quality : null) : effectiveQuality()
+    quality: mode === "audio" ? (p.format === "mp3" ? p.quality : null) : effectiveQuality(),
+    mute: mode === "video" && S.mute,
+    private: S.private,
+    zip: i.kind === "playlist" && S.zip
   };
   try {
     const { job } = await api("/api/download", body);
@@ -951,9 +977,13 @@ function jobStatus(j) {
   return s[j.stage] || s.processing;
 }
 function rowHtml(j) {
-  const thumb = safeImg(j.thumbnail);
-  return `<div class="jthumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon(j.mode === "audio" ? "music" : "clapperboard")}</div>
-    <div class="jbody"><div class="jtitle" title="${esc(j.title)}">${esc(j.title)}</div><div class="jline"></div><div class="meter"><i></i></div><div class="jdetail" hidden></div></div>
+  // Une tache privee arrive sans titre ni vignette : on affiche un libelle
+  // generique, et l'oeil barre plutot que l'icone du format.
+  const thumb = j.private ? "" : safeImg(j.thumbnail);
+  const title = j.private ? t().privateTitle : j.title;
+  const ph = j.private ? "eye-off" : (j.mode === "audio" ? "music" : "clapperboard");
+  return `<div class="jthumb">${thumb ? `<img src="${esc(thumb)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : icon(ph)}</div>
+    <div class="jbody"><div class="jtitle" title="${esc(title)}">${esc(title)}</div><div class="jline"></div><div class="meter"><i></i></div><div class="jdetail" hidden></div></div>
     <div class="jact"></div>`;
 }
 function updateRow(el, j, force) {
@@ -990,7 +1020,7 @@ function updateRow(el, j, force) {
     acts.push(["reveal", "folder-open", t().reveal]);
     if (j.single) acts.push(["save", "download", t().saveCopy]);
   }
-  if (j.status === "error" || j.status === "canceled") acts.push(["retry", "rotate-ccw", t().retry]);
+  if ((j.status === "error" || j.status === "canceled") && !j.private) acts.push(["retry", "rotate-ccw", t().retry]);
   // This runs about twice a second while downloading. Rebuilding the buttons
   // every time destroys a focused or hovered Cancel, so only touch them when
   // the set of actions really changes.
@@ -1036,7 +1066,7 @@ $("#list").addEventListener("click", async e => {
     if (a === "reveal") await api(`/api/jobs/${id}/reveal`, {});
     if (a === "save") { const link = document.createElement("a"); link.href = `/api/jobs/${id}/file`; link.download = ""; document.body.appendChild(link); link.click(); link.remove(); }
     if (a === "retry") {
-      const { job } = await api("/api/download", { url: j.url, mode: j.mode, format: j.format, quality: j.quality, title: j.title, thumbnail: j.thumbnail, playlist: j.playlist, count: j.items });
+      const { job } = await api("/api/download", { url: j.url, mode: j.mode, format: j.format, quality: j.quality, title: j.title, thumbnail: j.thumbnail, playlist: j.playlist, count: j.items, mute: j.mute, zip: j.zip });
       S.jobs = [job, ...S.jobs]; S.flashId = job.id; renderJobs(); schedulePoll(300);
     }
     clearActionError();
@@ -1277,32 +1307,42 @@ const HELP = {
   fr: [
     { h: "Ce que fait Siphon",
       p: ["Tu colles un lien, tu choisis un format, tu récupères le fichier. *Tout se passe sur ta machine* : rien n’est envoyé sur un serveur, il n’y a pas de limite de taille et pas de publicité.",
-          "Siphon n’est pas un site : c’est un petit programme qui ouvre son interface dans ton navigateur, à l’adresse 127.0.0.1 — c’est-à-dire ton propre ordinateur. Personne d’autre n’y a accès."] },
+          "Siphon n’est pas un site : c’est un petit programme qui ouvre son interface dans ton navigateur, à l’adresse 127.0.0.1, c’est-à-dire ton propre ordinateur. Personne d’autre n’y a accès."] },
 
     { h: "Quels sites fonctionnent",
       p: ["Plus de *1700 sites* : YouTube, SoundCloud, Vimeo, Bandcamp, Dailymotion, Twitch, Mixcloud, Reddit, TikTok, X, Facebook, Bluesky…",
-          "Les réseaux sociaux sont plus capricieux que les plateformes vidéo. *X* passe en général pour les contenus publics. *Instagram* est largement verrouillé derrière une connexion, et les stories ne sont par nature visibles qu’avec un compte — pour ceux-là, voir la section sur les navigateurs plus bas."] },
+          "Les réseaux sociaux sont plus capricieux que les plateformes vidéo. *X* passe en général pour les contenus publics. *Instagram* est largement verrouillé derrière une connexion, et les stories ne sont par nature visibles qu’avec un compte. Pour ceux-là, voir la section sur les navigateurs plus bas."] },
 
     { h: "Audio et vidéo",
       p: ["En *audio* : MP3 (320 à 128 kbps), WAV, FLAC ou M4A. Le titre, l’artiste et une pochette carrée sont écrits dans le fichier.",
-          "Une exception à connaître : *le WAV ne peut pas porter de pochette*, le format n’a aucun emplacement pour ça. Si tu veux du sans-perte avec l’image, prends du FLAC — même qualité, fichiers plus légers.",
-          "En *vidéo* : MP4 de 360p à la 4K, en H.264 + AAC quand le site le propose, pour que ça se lise partout et dans n’importe quel logiciel de montage."] },
+          "Une exception à connaître : *le WAV ne peut pas porter de pochette*, le format n’a aucun emplacement pour ça. Si tu veux du sans-perte avec l’image, prends du FLAC : même qualité, fichiers plus légers.",
+          "En *vidéo* : MP4 de 360p à la 4K, en H.264 + AAC quand le site le propose, pour que ça se lise partout et dans n’importe quel logiciel de montage.",
+          "*Sans le son* ne garde que l’image, quand la musique d’un Reel ou d’un TikTok ne t’intéresse pas. Le son est retiré sans réencoder, donc sans perte. À l’inverse, le mode audio ne récupère que le son, sans fichier vidéo."] },
+
+    { h: "Les playlists",
+      p: ["Colle le lien d’une playlist, publique ou non répertoriée : chaque élément est téléchargé dans un dossier à son nom, numéroté dans l’ordre. Un élément supprimé ou privé est sauté sans bloquer le reste.",
+          "Les fichiers arrivent au fur et à mesure. Coche *Archiver en zip* pour obtenir un seul fichier à la place, pratique pour envoyer la playlist à quelqu’un."] },
+
+    { h: "Le mode privé",
+      p: ["Coche *Privé* avant de télécharger. Le téléchargement apparaît dans la liste sans son titre, puis en disparaît quelques secondes après la fin.",
+          "D’ordinaire, Siphon écrit l’adresse d’origine dans son journal et dans les tags du fichier. En privé, il ne le fait pas. Le titre et l’artiste restent dans le fichier.",
+          "C’est de la discrétion dans Siphon, pas de l’anonymat : le fichier est bien sur ton disque, et ton navigateur se souvient des pages que tu as ouvertes. Le mode privé se désactive quand tu fermes la page."] },
 
     { h: "Les destinations",
       p: ["Une destination, c’est *un dossier et le format qui va avec*. Un dossier « Samples » en WAV, un dossier « Musique » en MP3 320 : un clic règle les deux d’un coup.",
-          "Tu les gères dans les réglages (icône curseurs). Changer le format pendant qu’une destination est sélectionnée *redéfinit cette destination* — c’est voulu, elle est faite pour ça."] },
+          "Tu les gères dans les réglages (icône curseurs). Changer le format pendant qu’une destination est sélectionnée *redéfinit cette destination*. C’est voulu, elle est faite pour ça."] },
 
     { h: "Découper un long mix en morceaux",
       p: ["Quand tu colles un DJ set ou une compilation, Siphon cherche tout seul où sont les morceaux, à trois endroits :"],
-      ul: ["*Les marqueurs du site* — quand le créateur les a renseignés, c’est le plus fiable",
-           "*La description* — Siphon y lit les lignes du type « 12:34 Artiste – Titre »",
-           "*Les commentaires* — sur un long set, quelqu’un a souvent listé toute la tracklist. Un bouton va la chercher ; ça prend une minute ou deux"],
+      ul: ["*Les marqueurs du site* : quand le créateur les a renseignés, c’est le plus fiable",
+           "*La description* : Siphon y lit les lignes du type « 12:34 Artiste – Titre »",
+           "*Les commentaires* : sur un long set, quelqu’un a souvent listé toute la tracklist. Un bouton va la chercher ; ça prend une minute ou deux"],
       p2: ["S’il en trouve plusieurs, elles sont toutes proposées et tu choisis. La liste des morceaux s’affiche avant de lancer, pour que tu voies exactement les fichiers que tu vas obtenir.",
            "Le découpage est *sans ré-encodage* : instantané, sans perte de qualité, et chaque morceau garde la pochette et les tags."] },
 
     { h: "Découper à l’oreille",
       p: ["Si aucune tracklist n’existe, le bouton *ciseaux* sur un téléchargement terminé ouvre l’éditeur.",
-          "Tu *glisses sur le tracé* pour sélectionner un passage, et ce passage devient un fichier. Ce que tu ne sélectionnes pas est simplement ignoré — tu peux n’extraire que trois moments d’un set de deux heures.",
+          "Tu *glisses sur le tracé* pour sélectionner un passage, et ce passage devient un fichier. Ce que tu ne sélectionnes pas est simplement ignoré : tu peux n’extraire que trois moments d’un set de deux heures.",
           "La précision vient de l’écoute, pas de la souris : tu sélectionnes grossièrement, puis tu cales les bords pendant que ça joue."],
       keys: [["Espace", "rejoue la sélection"], ["L", "en boucle"], ["[  ]", "cale les bords sur la lecture"],
              ["molette", "zoom"], ["Maj+molette", "défilement"], ["F", "cadre la sélection"],
@@ -1314,7 +1354,7 @@ const HELP = {
           "Important : active *Garder Siphon actif* dans les réglages. Sans ça Siphon s’éteint au bout de dix minutes, et une extension ne peut pas rallumer un programme."] },
 
     { h: "Se connecter via un navigateur",
-      p: ["Siphon télécharge de son côté et n’est connecté à rien. C’est pour ça que les vidéos avec limite d’âge, réservées aux membres, privées ou Instagram échouent — *être connecté dans ton navigateur ne lui sert à rien* par défaut.",
+      p: ["Siphon télécharge de son côté et n’est connecté à rien. C’est pour ça que les vidéos avec limite d’âge, réservées aux membres, privées ou Instagram échouent : *être connecté dans ton navigateur ne lui sert à rien* par défaut.",
           "Dans les réglages, tu peux lui désigner un navigateur. Il lira la session directement sur le disque : tu n’exportes rien, tu ne colles aucun mot de passe, et rien ne quitte ta machine. Ça débloque aussi le « confirme que tu n’es pas un robot » de YouTube.",
           "À garder en tête : c’est alors *ton compte* qui porte l’activité. Laisse ce réglage désactivé quand tu n’en as pas besoin."] },
 
@@ -1327,37 +1367,47 @@ const HELP = {
            "Les sites changent souvent, surtout YouTube : le moteur se met à jour tout seul environ une fois par jour. Si quelque chose casse d’un coup, le bouton *Mettre à jour le moteur* règle le problème neuf fois sur dix."] },
 
     { h: "Ce que tu télécharges",
-      p: ["Siphon ne vérifie rien et ne juge rien : il fait ce que tu lui demandes. *Ne télécharge que ce que tu as le droit d’utiliser* — tes propres contenus, le domaine public, les licences Creative Commons, ou ce pour quoi tu détiens les droits."] },
+      p: ["Siphon ne vérifie rien et ne juge rien : il fait ce que tu lui demandes. *Ne télécharge que ce que tu as le droit d’utiliser* : tes propres contenus, le domaine public, les licences Creative Commons, ou ce pour quoi tu détiens les droits."] },
   ],
   en: [
     { h: "What Siphon does",
       p: ["Paste a link, pick a format, get the file. *Everything happens on your machine*: nothing is uploaded, there is no size limit and there are no ads.",
-          "Siphon is not a website: it is a small program that opens its interface in your browser at 127.0.0.1 — your own computer. Nobody else can reach it."] },
+          "Siphon is not a website: it is a small program that opens its interface in your browser at 127.0.0.1, your own computer. Nobody else can reach it."] },
 
     { h: "Which sites work",
       p: ["Over *1700 sites*: YouTube, SoundCloud, Vimeo, Bandcamp, Dailymotion, Twitch, Mixcloud, Reddit, TikTok, X, Facebook, Bluesky and more.",
-          "Social networks are less dependable than video platforms. *X* generally works for public posts. *Instagram* is largely locked behind a login, and stories are by nature only visible to a signed-in account — see the browser section below for those."] },
+          "Social networks are less dependable than video platforms. *X* generally works for public posts. *Instagram* is largely locked behind a login, and stories are by nature only visible to a signed-in account. See the browser section below for those."] },
 
     { h: "Audio and video",
       p: ["In *audio*: MP3 (320 down to 128 kbps), WAV, FLAC or M4A, with the title, the artist and a square cover written into the file.",
-          "One exception worth knowing: *WAV cannot carry a cover*, the format has nowhere to put one. For lossless with artwork, use FLAC — same quality, smaller files.",
-          "In *video*: MP4 from 360p to 4K, H.264 + AAC whenever the site offers it, so it plays anywhere and in any editor."] },
+          "One exception worth knowing: *WAV cannot carry a cover*, the format has nowhere to put one. For lossless with artwork, use FLAC: same quality, smaller files.",
+          "In *video*: MP4 from 360p to 4K, H.264 + AAC whenever the site offers it, so it plays anywhere and in any editor.",
+          "*No sound* keeps the picture only, for when the music on a Reel or a TikTok is not what you are after. The sound is removed without re-encoding, so nothing is lost. The other way round, audio mode keeps only the sound, with no video file."] },
+
+    { h: "Playlists",
+      p: ["Paste a playlist link, public or unlisted: each item is downloaded into a folder named after it, numbered in order. A deleted or private item is skipped without holding up the rest.",
+          "Files arrive as they finish. Tick *Zip archive* to get a single file instead, handy for sending the playlist to someone."] },
+
+    { h: "Private mode",
+      p: ["Tick *Private* before downloading. The download shows in the list without its title, then leaves it a few seconds after it finishes.",
+          "Normally Siphon writes the source link into its log and into the file's tags. In private mode it does not. The title and artist stay in the file.",
+          "This is discretion inside Siphon, not anonymity: the file is on your disk, and your browser remembers the pages you opened. Private mode switches off when you close the page."] },
 
     { h: "Destinations",
       p: ["A destination is *a folder plus the format it exists for*. A Samples folder in WAV, a Music folder in MP3 320: one click sets both.",
-          "Manage them in the settings (slider icon). Changing the format while a destination is selected *redefines that destination* — that is deliberate, it is what they are for."] },
+          "Manage them in the settings (slider icon). Changing the format while a destination is selected *redefines that destination*. That is deliberate, it is what they are for."] },
 
     { h: "Splitting a long mix into tracks",
       p: ["Paste a DJ set or a compilation and Siphon looks for where the tracks begin, in three places:"],
-      ul: ["*The site's own markers* — the most reliable, when the creator filled them in",
-           "*The description* — Siphon reads lines like \"12:34 Artist – Title\"",
-           "*The comments* — under a long set someone has usually listed the whole tracklist. A button goes and finds it; it takes a minute or two"],
+      ul: ["*The site's own markers*: the most reliable, when the creator filled them in",
+           "*The description*: Siphon reads lines like \"12:34 Artist – Title\"",
+           "*The comments*: under a long set someone has usually listed the whole tracklist. A button goes and finds it; it takes a minute or two"],
       p2: ["If several are found they are all offered and you choose. The track list is shown before you start, so you see exactly which files you will get.",
            "The cut is *not re-encoded*: instant, lossless, and every piece keeps its cover and tags."] },
 
     { h: "Cutting by ear",
       p: ["When no tracklist exists anywhere, the *scissors* button on a finished download opens the editor.",
-          "*Drag across the wave* to select a passage, and that passage becomes a file. Whatever you do not select is simply ignored — you can pull three moments out of a two-hour set.",
+          "*Drag across the wave* to select a passage, and that passage becomes a file. Whatever you do not select is simply ignored: you can pull three moments out of a two-hour set.",
           "Precision comes from listening, not from the mouse: select roughly, then trim the edges while it plays."],
       keys: [["Space", "replay the selection"], ["L", "loop it"], ["[  ]", "trim edges to the playhead"],
              ["wheel", "zoom"], ["Shift+wheel", "pan"], ["F", "fit selection"],
@@ -1369,7 +1419,7 @@ const HELP = {
           "Important: turn on *Keep Siphon running* in the settings. Otherwise Siphon quits after ten minutes, and an add-on cannot wake a program back up."] },
 
     { h: "Signing in through a browser",
-      p: ["Siphon downloads on its own and is signed in to nothing. That is why age-restricted, members-only, private and Instagram links fail — *being signed in to your browser means nothing to it* by default.",
+      p: ["Siphon downloads on its own and is signed in to nothing. That is why age-restricted, members-only, private and Instagram links fail: *being signed in to your browser means nothing to it* by default.",
           "In the settings you can point it at a browser. It reads that session straight off disk: you export nothing, you paste no password, and nothing leaves your machine. It also clears YouTube's \"confirm you're not a bot\".",
           "Worth keeping in mind: *your own account* then carries the activity. Leave this off when you do not need it."] },
 
@@ -1382,7 +1432,7 @@ const HELP = {
            "Sites change often, YouTube most of all: the engine updates itself about once a day. When something breaks suddenly, *Update engine* fixes it nine times out of ten."] },
 
     { h: "What you download",
-      p: ["Siphon checks nothing and judges nothing: it does what you ask. *Only download what you have the right to use* — your own content, the public domain, Creative Commons licences, or anything you hold the rights to."] },
+      p: ["Siphon checks nothing and judges nothing: it does what you ask. *Only download what you have the right to use*: your own content, the public domain, Creative Commons licences, or anything you hold the rights to."] },
   ],
 };
 
