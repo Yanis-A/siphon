@@ -6,7 +6,7 @@ A private, local alternative to NoTube-style converters. Paste a link from YouTu
 - **Video:** MP4 from 360p up to 4K, H.264 + AAC whenever the site offers it (plays everywhere and in any editor)
 - **Playlists:** whole playlists into their own numbered folder
 - **Destinations:** named folders that carry their own format — a *Samples* folder in WAV, a *Music* folder in MP3 320. One click sets where the file goes and what it is.
-- **Tracks:** split a mix or a DJ set into one file per track. Siphon uses the site's chapter markers when there are any, and otherwise reads the tracklist out of the description — `12:34 Artist – Title` and the dozen shapes that line comes in. The cut is a stream copy, so it is lossless and near-instant, and every piece keeps the cover and tags.
+- **Tracks:** split a mix or a DJ set into one file per track. Siphon uses the site's chapter markers when there are any, and otherwise reads the tracklist out of the description: `12:34 Artist – Title` and the dozen shapes that line comes in. The cut loses no quality and every piece keeps the cover and tags. In WAV and FLAC it lands on the exact sample, which is what you want for sampling; MP3 and M4A are stream-copied, so their cuts snap to the format's ~20 ms frames.
 - Parallel downloads, live progress, cancel and retry
 - English and French interface
 

@@ -61,6 +61,9 @@ COOKIE_BROWSERS = ("firefox", "chrome", "edge", "brave", "chromium", "opera", "v
 AUDIO_FORMATS = {"mp3", "wav", "flac", "m4a"}
 MP3_BITRATES = {320, 256, 192, 128}
 COVER_FORMATS = {"mp3", "flac", "m4a"}
+# Audio-only containers whose codec can be rewritten as itself without loss,
+# so a cut in them can land on the exact sample (see _split)
+LOSSLESS_SUFFIXES = {".wav", ".flac"}
 VIDEO_HEIGHTS = [2160, 1440, 1080, 720, 480, 360]
 
 MEDIA_TYPES = {".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".flac": "audio/flac", ".wav": "audio/wav",
@@ -1153,8 +1156,12 @@ class JobManager:
     def _split(self, job: Job, marks: list[dict] | None = None, source: str | None = None) -> None:
         """Cut a finished file at the given marks, into a folder of its own.
 
-        A stream copy, so it is lossless and near-instant, and every piece keeps
-        the cover and the tags the download already wrote. The full file stays
+        MP3, M4A and video are stream-copied: lossless and near-instant, but a
+        copy can only cut between packets, so a piece starts or ends a few
+        hundredths of a second off. WAV and FLAC are rewritten in their own
+        codec instead, which loses nothing either and lands on the exact
+        sample: what matters when the piece is a sample. Every piece keeps the
+        cover and the tags the download already wrote. The full file stays
         where it is: the pieces go in a subfolder beside it.
         """
         ff = self.engine.ffmpeg()
@@ -1172,6 +1179,11 @@ class JobManager:
                         "(prive)" if job.private else out_dir, exc)
             return
         job.stage, job.items, job.percent = "splitting", len(marks), 0.0
+        # Copied, a WAV piece ran 64 ms long and a FLAC one 122 ms, the FLAC
+        # starting 34 ms early. Decoding and re-encoding to the same codec gives
+        # back the source samples bit for bit, cut where the marks say.
+        codec = audio_codec(ff, src) if src.suffix.lower() in LOSSLESS_SUFFIXES else None
+        exact = ["-c:a", codec] if codec == "flac" or (codec or "").startswith("pcm_") else []
         pieces = []
         for n, mark in enumerate(marks, 1):
             if job.cancel_requested:
@@ -1183,7 +1195,7 @@ class JobManager:
             args = [ff, "-nostdin", "-loglevel", "error", "-y", "-ss", str(mark["start"])]
             if mark.get("end"):
                 args += ["-t", str(mark["end"] - mark["start"])]
-            args += ["-i", str(src), "-map", "0", "-dn", "-ignore_unknown", "-c", "copy", str(target)]
+            args += ["-i", str(src), "-map", "0", "-dn", "-ignore_unknown", "-c", "copy", *exact, str(target)]
             try:
                 res = run_quiet(args, timeout=900)
             except subprocess.TimeoutExpired:
@@ -1266,6 +1278,17 @@ def kill_tree(proc: subprocess.Popen) -> None:
             proc.kill()
         except Exception:
             pass
+
+
+def audio_codec(ff: str, path: Path) -> str | None:
+    """Le codec de la piste son, tel que FFmpeg le nomme (pcm_s16le, flac...)."""
+    try:
+        res = run_quiet([ff, "-hide_banner", "-i", str(path)], timeout=30)
+    except subprocess.TimeoutExpired:
+        return None
+    # sans fichier de sortie FFmpeg finit en erreur, mais decrit d'abord les pistes
+    m = re.search(r"Audio: (\w+)", res.stderr or "")
+    return m.group(1) if m else None
 
 
 def strip_audio(ff: str, path: str) -> bool:
