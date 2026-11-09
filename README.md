@@ -6,7 +6,7 @@ A private, local alternative to NoTube-style converters. Paste a link from YouTu
 - **Video:** MP4 from 360p up to 4K, H.264 + AAC whenever the site offers it (plays everywhere and in any editor)
 - **Playlists:** whole playlists into their own numbered folder
 - **Spotify:** paste a track, an album or a public playlist. Spotify's own audio is DRM-protected and left alone: Siphon reads the track list and fetches each song from YouTube Music's songs shelf, the label-delivered studio version, keeping only a match with the same title, artist and length to within two seconds. The music video, a live take or a demo is never taken for the song. Tracks with no sure match are skipped and named; running a playlist again only fetches what was added. Without an account Spotify shows the first 100 tracks of a playlist, and none of a private one.
-- **Destinations:** named folders that carry their own format — a *Samples* folder in WAV, a *Music* folder in MP3 320. One click sets where the file goes and what it is.
+- **Destinations:** named folders that carry their own format: a *Samples* folder in WAV, a *Music* folder in MP3 320. One click sets where the file goes and what it is.
 - **Tracks:** split a mix or a DJ set into one file per track. Siphon uses the site's chapter markers when there are any, and otherwise reads the tracklist out of the description: `12:34 Artist – Title` and the dozen shapes that line comes in. The cut loses no quality and every piece keeps the cover and tags. In WAV and FLAC it lands on the exact sample, which is what you want for sampling; MP3 and M4A are stream-copied, so their cuts snap to the format's ~20 ms frames.
 - Parallel downloads, live progress, cancel and retry
 - English and French interface
@@ -15,7 +15,7 @@ A private, local alternative to NoTube-style converters. Paste a link from YouTu
 
 Needs [Python 3.10+](https://www.python.org/downloads/) first. The first launch installs the engine into a private `.venv` folder (about 80 MB, once). After that, Siphon opens in your browser in a second.
 
-**Windows:** install Python and tick *Add python.exe to PATH* during the install — it is easy to miss and nothing works without it. Then double-click `Siphon.bat`.
+**Windows:** install Python and tick *Add python.exe to PATH* during the install. It is easy to miss, and nothing works without it. Then double-click `Siphon.bat`.
 
 **macOS:** a file downloaded from the internet arrives without permission to run, and macOS refuses unsigned scripts on top of that. So the first launch takes two extra steps, once:
 
@@ -26,7 +26,7 @@ chmod +x Siphon.command
 
 Then **right-click `Siphon.command` → Open** (not a double-click), and confirm *Open* in the warning. Every launch after that is a plain double-click. The warning is Gatekeeper saying the script has no paid Apple signature, not that anything is wrong with it.
 
-**Linux:** `./Siphon.command`. On Debian and Ubuntu you may need `sudo apt install python3-venv python3-tk` first — the second one only for the folder picker.
+**Linux:** `./Siphon.command`. On Debian and Ubuntu you may need `sudo apt install python3-venv python3-tk` first (the second one only for the folder picker).
 
 Files go to `Downloads/Siphon` by default. Add more destinations from the settings (slider icon): each one is a folder plus the format it exists for, and they show up as a row of buttons under the download button.
 
@@ -34,7 +34,7 @@ Siphon quits on its own 10 minutes after you close its tab (never while somethin
 
 ## Browser extension
 
-`extension/` holds a Firefox add-on that sends the page you are on to Siphon, so you never copy a link. Click its toolbar button and the panel already shows the current tab and your destinations — one click picks the folder and the format together. There is also a right-click entry for a page, a link or a media element, and the toolbar icon carries a badge while downloads run.
+`extension/` holds a Firefox add-on that sends the page you are on to Siphon, so you never copy a link. Click its toolbar button and the panel already shows the current tab and your destinations: one click picks the folder and the format together. There is also a right-click entry for a page, a link or a media element, and the toolbar icon carries a badge while downloads run.
 
 **Load it:** open `about:debugging#/runtime/this-firefox` → *Load Temporary Add-on* → pick `extension/manifest.json`.
 
@@ -79,7 +79,7 @@ Download only what you have the right to use.
 
 ## License
 
-Siphon is MIT licensed — do what you like with it, keep the notice, and it comes with no warranty. See [LICENSE](LICENSE).
+Siphon is MIT licensed: do what you like with it, keep the notice, and it comes with no warranty. See [LICENSE](LICENSE).
 
 That covers Siphon's own code. The engine it drives keeps its own terms, listed below.
 
