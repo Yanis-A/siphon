@@ -231,7 +231,7 @@ button:disabled{cursor:default}
 .closed-box p{margin:0 0 20px;color:var(--muted)}
 .closed-box .mark{margin:0 auto;width:44px;height:44px;border-radius:12px}
 .closed-box .mark .i{width:26px;height:26px}
-.closed-box .btn2{width:auto;padding:0 18px;display:inline-flex}
+.closed-box .closed-wait{margin:0;display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--faint)}
 
 .spin{animation:spin .9s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
@@ -368,7 +368,7 @@ button:disabled{cursor:default}
     <span class="mark" data-icon="arrow-down-to-line"></span>
     <h2 data-t="closedTitle"></h2>
     <p data-t="closedText"></p>
-    <button class="btn2" type="button" id="reconnect"><span data-icon="refresh-cw"></span><span data-t="reconnect"></span></button>
+    <p class="closed-wait"><span class="spin-wrap" data-icon="loader-circle"></span><span data-t="closedWait"></span></p>
   </div>
 </div>
 
@@ -433,7 +433,7 @@ const T = {
     checked: t => `Last update ${t}`, never: "never", updateFailed: "Update failed:",
     busy: "Wait for downloads to finish first.",
     quitConfirm: "Downloads in progress will stop. Quit anyway?",
-    closedTitle: "Siphon is closed", closedText: "Launch Siphon again to keep downloading.", reconnect: "Reconnect",
+    closedTitle: "Siphon is closed", closedText: "Launch it again from its shortcut: this page picks it up by itself.", closedWait: "Waiting for Siphon…",
     stage: {
       queued: "Waiting", engine: "Waiting for engine update", starting: "Starting",
       download: "Downloading", download_video: "Downloading video", download_audio: "Downloading audio", download_media: "Downloading",
@@ -529,7 +529,7 @@ const T = {
     checked: t => `Dernière mise à jour ${t}`, never: "jamais", updateFailed: "Échec de la mise à jour :",
     busy: "Attends la fin des téléchargements.",
     quitConfirm: "Les téléchargements en cours seront arrêtés. Quitter quand même ?",
-    closedTitle: "Siphon est fermé", closedText: "Relance Siphon pour continuer à télécharger.", reconnect: "Reconnecter",
+    closedTitle: "Siphon est fermé", closedText: "Relance-le avec son raccourci : cette page le retrouve toute seule.", closedWait: "En attente de Siphon…",
     stage: {
       queued: "En attente", engine: "En attente du moteur", starting: "Démarrage",
       download: "Téléchargement", download_video: "Téléchargement de la vidéo", download_audio: "Téléchargement de l’audio", download_media: "Téléchargement",
@@ -1134,7 +1134,9 @@ async function poll() {
   } catch (e) {
     if (aborted(e)) return;   // superseded: schedulePoll already armed the next one
     if (++S.misses >= 3 && !S.offline) { S.offline = true; $("#closed").hidden = false; }
-    next = 3000;
+    // offline, look often: a relaunched Siphon waits a moment for this tab
+    // before opening a new one, and only skips that if it hears from us
+    next = S.offline ? 800 : 3000;
   } finally {
     if (pollCtl === ctl) pollCtl = null;
   }
@@ -1296,9 +1298,8 @@ $("#quitBtn").addEventListener("click", async () => {
   if (S.jobs.some(j => j.status === "running" || j.status === "queued") && !confirm(t().quitConfirm)) return;
   try { await api("/api/quit", {}); } catch {}
   clearTimeout(pollTimer); S.offline = true; $("#closed").hidden = false;
-  setTimeout(() => schedulePoll(3000), 1500);
+  setTimeout(() => schedulePoll(800), 1500);
 });
-$("#reconnect").addEventListener("click", () => schedulePoll(0));
 $("#home").addEventListener("click", goHome);
 document.querySelectorAll("[data-lang]").forEach(b => b.addEventListener("click", () => { lang = b.dataset.lang; store.set("lang", lang); applyLang(); }));
 

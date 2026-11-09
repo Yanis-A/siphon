@@ -1780,6 +1780,7 @@ class State:
         self.engine.cookies_from = want if want in COOKIE_BROWSERS else ""
         self.cfg_lock = threading.Lock()      # config writes arrive from several threads
         self.last_seen = time.time()
+        self.page_seen = 0.0                  # last poll from a Siphon tab, not the extension
         self.server: ThreadingHTTPServer | None = None
 
     @property
@@ -1895,6 +1896,8 @@ class Handler(BaseHTTPRequestHandler):
                                     "cookiesFrom": STATE.engine.cookies_from, "browsers": list(COOKIE_BROWSERS),
                                     "engine": STATE.engine.snapshot(), "jobs": STATE.jobs.list()})
         if path == "/api/jobs":
+            if not is_extension_origin(self.headers.get("Origin") or ""):
+                STATE.page_seen = time.time()
             return self._json(200, {"jobs": STATE.jobs.list(), "engine": STATE.engine.snapshot()})
         m = re.fullmatch(r"/api/jobs/([0-9a-f]{12})/(file|audio)", path)
         if m:
@@ -2289,7 +2292,14 @@ def main() -> None:
     threading.Thread(target=warm_engine, daemon=True).start()
     threading.Thread(target=watchdog, daemon=True).start()
     if not no_browser:
-        threading.Timer(0.4, lambda: webbrowser.open(f"http://127.0.0.1:{port}/")).start()
+        def open_page():
+            # A tab left open when Siphon was quit keeps looking for it and
+            # takes it back within a second. Opening another one on top would
+            # leave two Siphons side by side, so give that tab a moment first.
+            time.sleep(1.5)
+            if not STATE.page_seen:
+                webbrowser.open(f"http://127.0.0.1:{port}/")
+        threading.Thread(target=open_page, daemon=True).start()
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
