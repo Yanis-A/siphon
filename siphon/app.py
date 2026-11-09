@@ -19,6 +19,8 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
+import urllib.error
 import urllib.request
 import uuid
 import zipfile
@@ -696,6 +698,282 @@ def best_comment_tracklist(comments, duration: int) -> dict:
     return best
 
 
+# ───────────────────────────── spotify ─────────────────────────────
+# Spotify's audio is DRM-protected and nothing here touches it. What Spotify
+# does hand out is the track list: title, artists, and the duration to the
+# millisecond. Each track is then looked up in the "songs" shelf of YouTube
+# Music, which holds the files labels deliver themselves: the studio master.
+# Plain YouTube search tends to put the music video first instead, with its
+# intro, its cuts and its sound effects (Loser by Tame Impala: 223 s on
+# Spotify and on YouTube Music, 268 s as the official video).
+
+SPOTIFY_RE = re.compile(r"^https?://open\.spotify\.com/(?:intl-[a-z-]+/)?(?:embed/)?(track|album|playlist)/([A-Za-z0-9]{22})", re.I)
+SPOTIFY_SHORT_RE = re.compile(r"^https?://(?:spotify\.link|spoti\.fi)/", re.I)
+SPOTIFY_IMAGE = re.compile(r"^https://[\w.-]*(?:scdn\.co|spotifycdn\.com)/image/")
+WEB_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
+# without an account, the embed page lists this many tracks of a playlist at most
+SPOTIFY_PAGE = 100
+# the "songs" filter of a YouTube Music search
+YTM_SONGS = "EgWKAQIIAWoKEAkQBRAKEAMQBA%3D%3D"
+YTM_CLIENT = {"clientName": "WEB_REMIX", "clientVersion": "1.20251020.01.00", "hl": "en", "gl": "FR"}
+# Words that mark another take of a song. One in the YouTube Music title and not
+# in the Spotify one means another version: the piano demo of a song can be the
+# exact same length as the song.
+VERSION_WORDS = {"live", "remix", "demo", "acoustic", "instrumental", "karaoke", "cover", "sped", "slowed",
+                 "reverb", "nightcore", "edit", "extended", "piano", "unplugged", "session", "mashup",
+                 "bootleg", "rework", "vip", "acapella", "cappella", "orchestral", "rehearsal", "8d"}
+# YouTube Music shows durations to the second, rounded
+SURE_GAP = 2.5
+MAX_GAP = 15
+
+
+def spotify_ref(url: str) -> tuple[str, str] | None:
+    m = SPOTIFY_RE.match(url or "")
+    return (m.group(1).lower(), m.group(2)) if m else None
+
+
+def http_text(url: str, timeout: int = 15) -> tuple[str, str]:
+    req = urllib.request.Request(url, headers={"User-Agent": WEB_UA, "Accept-Language": "en"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.geturl(), r.read().decode("utf-8", "replace")
+
+
+def expand_spotify(url: str) -> str:
+    """A spotify.link share link, followed to the open.spotify.com page it stands for."""
+    if not SPOTIFY_SHORT_RE.match(url):
+        return url
+    try:
+        final, text = http_text(url)
+    except OSError:
+        return url
+    if spotify_ref(final):
+        return final
+    m = re.search(r"https://open\.spotify\.com/(?:track|album|playlist)/[A-Za-z0-9]{22}", text)
+    return m.group(0) if m else url
+
+
+def biggest_image(node) -> str:
+    """The largest cover Spotify lists anywhere in an entity."""
+    best, size = "", -1
+    stack = [node]
+    while stack:
+        o = stack.pop()
+        if isinstance(o, dict):
+            u = o.get("url")
+            if isinstance(u, str) and SPOTIFY_IMAGE.match(u):
+                w = o.get("width") or o.get("maxWidth") or 0
+                if isinstance(w, int) and w > size:
+                    best, size = u, w
+            stack.extend(o.values())
+        elif isinstance(o, list):
+            stack.extend(o)
+    return best
+
+
+def spotify_list(url: str) -> dict:
+    """Read a track, an album or a public playlist from Spotify's embed page.
+
+    It is the page Spotify serves to any site that embeds a player, so it
+    needs no account. A private playlist is simply not served.
+    """
+    ref = spotify_ref(url)
+    if not ref:
+        raise InfoError("unsupported", "")
+    kind, sid = ref
+    try:
+        _, page = http_text(f"https://open.spotify.com/embed/{kind}/{sid}")
+    except urllib.error.HTTPError as exc:
+        raise InfoError("spotify_private" if exc.code in (400, 401, 403, 404) else "network", "")
+    except OSError:
+        raise InfoError("network", "")
+    m = re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', page, re.S)
+    try:
+        entity = json.loads(m.group(1))["props"]["pageProps"]["state"]["data"]["entity"]
+    except (AttributeError, KeyError, TypeError, json.JSONDecodeError):
+        raise InfoError("spotify_private", "")
+    if kind == "track":
+        rows = [{"title": entity.get("title") or entity.get("name"),
+                 "artist": ", ".join(a.get("name") or "" for a in entity.get("artists") or [] if isinstance(a, dict)),
+                 "duration": entity.get("duration")}]
+    else:
+        # a playlist can hold podcast episodes too; only songs have a studio version
+        rows = [{"title": t.get("title"), "artist": t.get("subtitle"), "duration": t.get("duration")}
+                for t in entity.get("trackList") or []
+                if isinstance(t, dict) and t.get("entityType", "track") == "track"]
+    tracks = [{"title": str(r["title"])[:200], "artist": str(r["artist"] or "")[:200],
+               "duration": (r["duration"] or 0) / 1000 if isinstance(r["duration"], (int, float)) else 0}
+              for r in rows if r.get("title")]
+    if not tracks:
+        raise InfoError("spotify_private", "")
+    authors = [a.get("name") for a in entity.get("authors") or [] if isinstance(a, dict) and a.get("name")]
+    return {"kind": kind, "id": sid, "title": str(entity.get("title") or entity.get("name") or "Spotify")[:200],
+            "uploader": tracks[0]["artist"] if kind == "track" else str(entity.get("subtitle") or (authors[0] if authors else "")),
+            "thumbnail": biggest_image(entity.get("coverArt") or entity.get("visualIdentity") or entity),
+            "tracks": tracks, "capped": kind == "playlist" and len(tracks) >= SPOTIFY_PAGE}
+
+
+def ytmusic_songs(query: str) -> list[dict]:
+    """The songs shelf of a YouTube Music search, in one request.
+
+    It is the request the YouTube Music page itself makes. yt-dlp can run the
+    same search, but it only gets durations by opening every result, about
+    three seconds each, where this takes half a second for the whole shelf.
+    """
+    body = json.dumps({"context": {"client": YTM_CLIENT}, "query": query, "params": YTM_SONGS}).encode()
+    req = urllib.request.Request("https://music.youtube.com/youtubei/v1/search?prettyPrint=false", data=body,
+                                 headers={"Content-Type": "application/json", "User-Agent": WEB_UA,
+                                          "Origin": "https://music.youtube.com"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = json.load(r)
+    out, stack = [], [data]
+    while stack:
+        o = stack.pop()
+        if isinstance(o, list):
+            stack.extend(reversed(o))      # keep the page's order: it is the ranking
+            continue
+        if not isinstance(o, dict):
+            continue
+        item = o.get("musicResponsiveListItemRenderer")
+        if not isinstance(item, dict):
+            stack.extend(reversed(list(o.values())))
+            continue
+        vid = (item.get("playlistItemData") or {}).get("videoId")
+        cols = ["".join(run.get("text", "") for run in
+                        (((c.get("musicResponsiveListItemFlexColumnRenderer") or {}).get("text") or {}).get("runs") or []))
+                for c in item.get("flexColumns") or []]
+        if not vid or len(cols) < 2:
+            continue
+        # "Artist • Album • 3:44", sometimes led by the shelf name
+        parts = [p.strip() for p in cols[1].split("•")]
+        if parts and parts[0] in ("Song", "Video"):
+            parts = parts[1:]
+        clock = parts[-1] if parts and re.fullmatch(r"\d+(?::\d\d){1,2}", parts[-1]) else ""
+        out.append({"id": vid, "title": cols[0], "artist": parts[0] if parts else "",
+                    "album": parts[1] if len(parts) > 2 else "", "duration": parse_clock(clock) if clock else 0})
+    return out
+
+
+def ytmusic_songs_slow(engine: Engine, query: str) -> list[dict]:
+    """The same search through yt-dlp, for the day the direct request breaks."""
+    url = "https://music.youtube.com/search?q=" + quote(query) + "#songs"
+    engine.acquire()
+    try:
+        res = run_quiet(engine.base_args() + [
+            "--playlist-end", "4", "--skip-download", "--no-warnings", "--print",
+            "%(id)s\t%(title)s\t%(artists.0,artist,creator,uploader|)s\t%(album|)s\t%(duration|0)s", "--", url],
+            timeout=INFO_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return []
+    finally:
+        engine.release()
+    out = []
+    for line in res.stdout.splitlines():
+        f = line.split("\t")
+        if len(f) == 5 and f[0]:
+            out.append({"id": f[0], "title": f[1], "artist": f[2], "album": f[3],
+                        "duration": int(float(f[4])) if re.fullmatch(r"[\d.]+", f[4]) else 0})
+    return out
+
+
+def fold(text: str) -> str:
+    """Lowercase, accents and punctuation dropped: what two spellings share."""
+    text = unicodedata.normalize("NFKD", text or "")
+    text = "".join(c for c in text if not unicodedata.combining(c)).lower().replace("&", " and ")
+    return " ".join(re.findall(r"[^\W_]+", text))
+
+
+def core_title(title: str) -> str:
+    """A title without what only qualifies it: brackets, a " - " suffix, a feature."""
+    t = re.sub(r"[(\[].*?[)\]]", " ", title or "")
+    t = re.split(r"\s[-–—]\s", t)[0]
+    t = re.split(r"\b(?:feat|ft|featuring)\b\.?", t, flags=re.I)[0]
+    return fold(t) or fold(title)
+
+
+def artist_matches(spotify: str, found: str) -> bool:
+    found = f" {fold(found)} "
+    names = [fold(n) for n in re.split(r",|&| x | feat\.? ", spotify or "", flags=re.I)]
+    return any(n and f" {n} " in found for n in names) or (bool(fold(spotify)) and f" {fold(spotify)} " in found)
+
+
+def match_track(engine: Engine, track: dict) -> dict | None:
+    """The YouTube Music song that is this Spotify track, or the closest one.
+
+    Sure means same title, same artist, no word announcing another version,
+    and the same length within a rounding.
+    """
+    first_artist = re.split(r",", track["artist"])[0].strip()
+    queries = [f"{first_artist} {track['title']}"]
+    if core_title(track["title"]) != fold(track["title"]):
+        queries.append(f"{first_artist} {core_title(track['title'])}")
+    want_core, want_words = core_title(track["title"]), set(fold(track["title"]).split())
+    best = None
+    for query in queries:
+        try:
+            found = ytmusic_songs(query)
+        except (OSError, ValueError) as exc:
+            log.info("youtube music search failed (%s), falling back on yt-dlp", exc)
+            found = []
+        if not found:
+            found = ytmusic_songs_slow(engine, query)
+        for rank, c in enumerate(found[:8]):
+            gap = abs(c["duration"] - track["duration"]) if c["duration"] and track["duration"] else MAX_GAP
+            if gap > MAX_GAP:
+                continue
+            same = core_title(c["title"]) == want_core and artist_matches(track["artist"], c["artist"])
+            other = (set(fold(c["title"]).split()) & VERSION_WORDS) - want_words
+            sure = same and not other and gap <= SURE_GAP
+            # among the sure ones the ranking decides, it puts the original first
+            key = (sure, same, not other, -rank if sure else -gap)
+            if best is None or key > best[0]:
+                best = (key, {"id": c["id"], "url": f"https://music.youtube.com/watch?v={c['id']}",
+                              "title": c["title"], "artist": c["artist"], "album": c["album"],
+                              "duration": c["duration"], "gap": round(gap, 1), "sure": sure})
+        if best and best[1]["sure"]:
+            break
+    return best[1] if best else None
+
+
+def spotify_info(engine: Engine, url: str, private: bool = False) -> dict:
+    """The preview of a Spotify link.
+
+    A list is only read: matching a hundred tracks takes a minute, so that
+    happens while downloading. A single track is matched now, so the page can
+    say which file it found and how sure it is before anything is saved.
+    """
+    sp = spotify_list(url)
+    if sp["kind"] != "track":
+        return {"kind": "playlist", "title": sp["title"], "uploader": sp["uploader"], "site": "Spotify",
+                "count": len(sp["tracks"]), "thumbnail": sp["thumbnail"], "url": url,
+                "hasVideo": False, "hasAudio": True, "maxHeight": 0, "heights": [],
+                "spotify": {"kind": sp["kind"], "capped": sp["capped"]}}
+    track = sp["tracks"][0]
+    m = match_track(engine, track)
+    if not m:
+        raise InfoError("spotify_missing", "")
+    info = fetch_info(engine, m["url"], private)
+    # a song has no video worth having, and no tracklist to split along
+    info.update(hasVideo=False, sources=[], thumbnail=sp["thumbnail"] or info["thumbnail"],
+                spotify={"kind": "track", "name": track_name(track), "duration": round(track["duration"]),
+                         "found": f"{m['artist']} - {m['title']}", "album": m["album"],
+                         "gap": m["gap"], "sure": m["sure"]})
+    return info
+
+
+def track_name(track: dict) -> str:
+    """Artist - Title, without the artists the title already credits.
+
+    Spotify lists every featured artist and often names them in the title
+    too: "Daft Punk, Pharrell Williams, Nile Rodgers - Get Lucky (feat.
+    Pharrell Williams and Nile Rodgers)" comes out as "Daft Punk - Get Lucky
+    (feat. Pharrell Williams and Nile Rodgers)".
+    """
+    title = f" {fold(track['title'])} "
+    names = [n.strip() for n in (track.get("artist") or "").split(",") if n.strip()]
+    kept = [n for i, n in enumerate(names) if i == 0 or f" {fold(n)} " not in title]
+    return f"{', '.join(kept)} - {track['title']}" if kept else track["title"]
+
+
 # ───────────────────────────── jobs ─────────────────────────────
 
 PP_STAGE = {
@@ -844,6 +1122,11 @@ class Job:
         self.duration = int(params.get("duration") or 0)
         self.peaks: list[int] = []                  # waveform, computed on demand and kept
         self.count = int(params.get("count") or 0)
+        # the file name to give, when the site's title is not the one to keep
+        self.name = safe_name(params.get("name"), "") if params.get("name") else ""
+        # a Spotify link: the tracks to look up on YouTube Music, one by one
+        self.spotify: dict | None = params.get("spotify")
+        self.missing: list[str] = []                # Spotify tracks with no sure match
         self.folder = params["folder"]
         self.status = "queued"                     # queued running done error canceled
         self.stage = "queued"
@@ -863,13 +1146,16 @@ class Job:
         self._split = False
         self._size = 0
         self._sized_at = 0.0
+        self._sized_final = False
 
     def total_size(self) -> int:
         """Bytes on disk, cached: public() runs on every poll, for every job."""
-        if self._sized_at and self.status in ("done", "error", "canceled"):
+        if self._sized_final:
             return self._size          # a finished job never grows again
+        finished = self.status in ("done", "error", "canceled")
         now = time.time()
-        if now - self._sized_at < 1.0:
+        # a size measured while running can predate the final file: never keep it once done
+        if not finished and now - self._sized_at < 1.0:
             return self._size
         total = 0
         for f in self.files:
@@ -877,7 +1163,7 @@ class Job:
                 total += os.path.getsize(f)
             except OSError:
                 pass
-        self._size, self._sized_at = total, now
+        self._size, self._sized_at, self._sized_final = total, now, finished
         return total
 
     def source_file(self) -> str | None:
@@ -902,6 +1188,8 @@ class Job:
                 # en prive on cache les noms, pas leur nombre : la page s'en sert
                 # pour distinguer « enregistre » de « deja present »
                 "failed": self.failed,
+                "name": "" if hidden else self.name,
+                "missing": [] if hidden else self.missing,
                 "files": [""] * len(self.files) if hidden else [Path(f).name for f in self.files],
                 "size": size,
                 "single": len(self.files) == 1 and not self.playlist, "editable": editable,
@@ -920,7 +1208,8 @@ for _champ in ("comment", "purl", "description", "synopsis"):
     PRIVATE_META += ["--parse-metadata", f":(?P<meta_{_champ}>)"]
 
 
-def build_job_args(engine: Engine, job: Job) -> list[str]:
+def build_job_args(engine: Engine, job: Job, url: str | None = None, out: str | None = None) -> list[str]:
+    """The yt-dlp command for a job; url and out stand in for one of its tracks."""
     a = engine.base_args() + [
         "--newline", "--progress", "--no-simulate",
         "-P", f"home:{job.folder}", "-P", f"temp:{job.tmp}",
@@ -931,11 +1220,16 @@ def build_job_args(engine: Engine, job: Job) -> list[str]:
         "--progress-template", "postprocess:SIPHON_PP %(progress.{status,postprocessor})j",
         "--print", "after_move:SIPHON_FILE %(filepath)j",
     ]
+    title = job.name.replace("%", "%%") if job.name else "%(title)s"
     if job.mode == "audio":
-        stem = "%(title)s"
+        stem = title
     else:
-        stem = "%(title)s" if job.quality in (None, "best") else f"%(title)s [{job.quality}p]"
-    if job.playlist:
+        stem = title if job.quality in (None, "best") else f"{title} [{job.quality}p]"
+    if out:
+        # a track of a list keeps a file already there: running the list again
+        # only fetches what was added since
+        a += ["--no-playlist", "-o", out] + ([] if job.playlist else ["--force-overwrites"])
+    elif job.playlist:
         a += ["--yes-playlist", "--ignore-errors",
               "-o", f"%(playlist_title,playlist_id|Playlist)s/%(playlist_index)03d - {stem}.%(ext)s"]
     else:
@@ -962,7 +1256,7 @@ def build_job_args(engine: Engine, job: Job) -> list[str]:
               "--merge-output-format", "mp4", "--remux-video", "mp4"]
     if job.private:
         a += PRIVATE_META
-    return a + ["--", job.url]
+    return a + ["--", url or job.url]
 
 
 class JobManager:
@@ -1045,40 +1339,18 @@ class JobManager:
             job.status, job.stage = "running", "starting"
             Path(job.folder).mkdir(parents=True, exist_ok=True)
             job.tmp.mkdir(parents=True, exist_ok=True)
-            args = build_job_args(self.engine, job)
             if job.private:
                 # Le journal est un fichier qui survit aux redemarrages et garde
                 # l'adresse de chaque telechargement : un prive n'y laisse que
                 # son existence.
                 log.info("job %s: telechargement prive (%s)", job.id, job.mode)
+            if job.spotify:
+                rc, errors, tail = self._spotify(job)
             else:
-                log.info("job %s: %s", job.id, subprocess.list2cmdline(args) if IS_WIN else " ".join(args))
-            popen_kw = dict(stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                            text=True, encoding="utf-8", errors="replace", bufsize=1, env=child_env())
-            if IS_WIN:
-                popen_kw["creationflags"] = NO_WINDOW
-            else:
-                popen_kw["start_new_session"] = True
-            job.proc = subprocess.Popen(args, **popen_kw)
-            if job.cancel_requested:  # cancel arrived while the process was starting
-                kill_tree(job.proc)
-            tail: list[str] = []
-            errors: list[str] = []
-            assert job.proc.stdout is not None
-            for raw in job.proc.stdout:
-                line = raw.rstrip("\r\n")
-                if not line:
-                    continue
-                if line.startswith("SIPHON_"):
-                    self._handle(job, line)
-                    continue
-                tail.append(line)
-                tail[:] = tail[-40:]
-                if line.startswith("ERROR:"):
-                    errors.append(line)
-                    if job.playlist:
-                        job.failed += 1
-            rc = job.proc.wait()
+                args = build_job_args(self.engine, job)
+                if not job.private:
+                    log.info("job %s: %s", job.id, subprocess.list2cmdline(args) if IS_WIN else " ".join(args))
+                rc, errors, tail = self._spawn(job, args)
             if job.cancel_requested:
                 job.status, job.stage = "canceled", "canceled"
             elif rc == 0 or (job.playlist and job.files):
@@ -1100,6 +1372,9 @@ class JobManager:
                 # la fin de la sortie de yt-dlp cite souvent l'adresse ou l'identifiant
                 log.info("job %s failed (%s): %s", job.id, rc,
                          "(prive)" if job.private else "\n".join(tail[-8:]))
+        except InfoError as exc:
+            job.status, job.stage = "error", "error"
+            job.error_code, job.error_detail = exc.code, exc.detail
         except Exception as exc:
             log.exception("job %s crashed", job.id)
             job.status, job.stage = "error", "error"
@@ -1111,6 +1386,88 @@ class JobManager:
                 self.engine.release()
             remove_tree(job.tmp)
             self.slots.release()
+
+    def _spawn(self, job: Job, args: list[str]) -> tuple[int, list[str], list[str]]:
+        """Run one yt-dlp command for a job: its return code, ERROR lines, last lines."""
+        popen_kw = dict(stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                        text=True, encoding="utf-8", errors="replace", bufsize=1, env=child_env())
+        if IS_WIN:
+            popen_kw["creationflags"] = NO_WINDOW
+        else:
+            popen_kw["start_new_session"] = True
+        job.proc = subprocess.Popen(args, **popen_kw)
+        if job.cancel_requested:  # cancel arrived while the process was starting
+            kill_tree(job.proc)
+        tail: list[str] = []
+        errors: list[str] = []
+        assert job.proc.stdout is not None
+        for raw in job.proc.stdout:
+            line = raw.rstrip("\r\n")
+            if not line:
+                continue
+            if line.startswith("SIPHON_"):
+                self._handle(job, line)
+                continue
+            tail.append(line)
+            tail[:] = tail[-40:]
+            if line.startswith("ERROR:"):
+                errors.append(line)
+                # a Spotify list counts its failures per track, not per line
+                if job.playlist and not job.spotify:
+                    job.failed += 1
+        return job.proc.wait(), errors, tail
+
+    def _spotify(self, job: Job) -> tuple[int, list[str], list[str]]:
+        """Look each Spotify track up on YouTube Music, and download the sure ones.
+
+        A track with no sure match is left out and named in the job, rather
+        than replaced by a version that is not the one on Spotify. A list is
+        saved in a folder of its own, under names that do not move when the
+        playlist is reordered, so running it again only fetches the new ones.
+        """
+        sp = job.spotify or {}
+        tracks = sp.get("tracks") or []
+        kind = sp.get("kind")
+        folder = ""
+        if kind == "album":
+            folder = safe_name(f"{sp.get('uploader')} - {sp.get('title')}" if sp.get("uploader") else sp.get("title"), "Spotify")
+        elif kind == "playlist":
+            folder = safe_name(sp.get("title"), "Spotify")
+        job.items = len(tracks)
+        saved, errors, tail, unsure = 0, [], [], False
+        for n, track in enumerate(tracks, 1):
+            if job.cancel_requested:
+                break
+            job.item, job.stage = n, "matching"
+            job.percent = max(job.percent, 100.0 * (n - 1) / max(len(tracks), 1))
+            m = match_track(self.engine, track)
+            if not m or not m["sure"]:
+                unsure = unsure or bool(m)
+                job.missing.append(track_name(track))
+                if job.playlist:
+                    job.failed += 1
+                continue
+            name = safe_name(f"{n:02d} - {track['title']}" if kind == "album" else track_name(track), f"{n:02d}")
+            # a literal name in a yt-dlp template: its % have to be doubled
+            out = ((f"{folder}/" if folder else "") + name).replace("%", "%%") + ".%(ext)s"
+            if not job.private:
+                log.info("job %s: track %s/%s -> %s", job.id, n, len(tracks), m["url"])
+            rc, err, tail = self._spawn(job, build_job_args(self.engine, job, m["url"], out))
+            if rc == 0:
+                saved += 1
+            else:
+                errors += err
+                if job.playlist:
+                    job.failed += 1
+        if not job.private:
+            log.info("job %s: spotify %s, %s saved, %s without a sure match", job.id, kind, saved, len(job.missing))
+        if saved or job.cancel_requested:
+            return 0, errors, tail
+        if not errors:
+            if kind != "track":
+                raise InfoError("spotify_none", "")
+            raise InfoError("spotify_unsure" if unsure else "spotify_missing", "")
+        return 1, errors, tail
 
     def _mute(self, job: Job) -> None:
         """Retire le son de chaque video telechargee."""
@@ -1144,6 +1501,7 @@ class JobManager:
         """
         job.status, job.stage, job.percent, job.failed = "running", "splitting", 0.0, 0
         job.cancel_requested = False
+        job._sized_final = False       # the pieces are about to add to it
         try:
             self._split(job, marks, source)
         except Exception as exc:
@@ -1627,7 +1985,10 @@ class Handler(BaseHTTPRequestHandler):
             url = str(body.get("url") or "").strip()
             if len(url) > 2048 or not URL_RE.match(url):
                 return self._json(400, {"error": "invalid_url"})
+            url = expand_spotify(url)
             try:
+                if spotify_ref(url):
+                    return self._json(200, {"info": spotify_info(STATE.engine, url, bool(body.get("private")))})
                 return self._json(200, {"info": fetch_info(STATE.engine, url, bool(body.get("private")))})
             except InfoError as e:
                 return self._json(422, {"error": e.code, "detail": e.detail})
@@ -1660,19 +2021,38 @@ class Handler(BaseHTTPRequestHandler):
             if not preset:
                 return self._json(400, {"error": "bad_format"})
             thumb = str(body.get("thumbnail") or "")
+            title = str(body.get("title") or "")[:300]
             try:
                 count = max(0, int(body.get("count") or 0))
             except (TypeError, ValueError):
                 count = 0
+            playlist = bool(body.get("playlist"))
+            # The extension sends a Spotify link straight here, with no preview:
+            # read its tracks now, it takes half a second, so the job knows what
+            # it is from its first line in the list.
+            url = expand_spotify(url)
+            sp = None
+            if spotify_ref(url):
+                try:
+                    sp = spotify_list(url)
+                except InfoError as e:
+                    return self._json(422, {"error": e.code, "detail": e.detail})
+                playlist = sp["kind"] != "track"
+                title = title or (track_name(sp["tracks"][0]) if not playlist else sp["title"])
+                thumb = thumb or sp["thumbnail"]
+                count = len(sp["tracks"])
+                if preset["mode"] == "video":       # a song, so the sound of it
+                    preset = {"mode": "audio", "format": "mp3", "quality": 320}
             private = bool(body.get("private"))
             job = STATE.jobs.add({
                 "url": url, **preset,
                 "mute": bool(body.get("mute")), "private": private, "zip": bool(body.get("zip")),
                 # un prive ne garde meme pas son titre en memoire
-                "title": "" if private else str(body.get("title") or "")[:300],
+                "title": "" if private else title,
                 "thumbnail": "" if private or not thumb.startswith(("http://", "https://")) else thumb,
-                "playlist": bool(body.get("playlist")), "marks": clean_marks(body.get("marks")),
+                "playlist": playlist, "marks": clean_marks(body.get("marks")),
                 "duration": body.get("duration"), "count": count, "folder": dest["folder"],
+                "name": str(body.get("name") or "")[:200], "spotify": sp,
             })
             return self._json(200, {"job": job.public()})
 

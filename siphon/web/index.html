@@ -86,7 +86,7 @@ button:disabled{cursor:default}
 .skel{background:linear-gradient(90deg,var(--raised) 0 40%,#323846 50%,var(--raised) 60% 100%);background-size:250% 100%;animation:skel 1.3s linear infinite;border-radius:var(--r-sm)}
 @keyframes skel{from{background-position:100% 0}to{background-position:-150% 0}}
 
-.opts{border-top:1px solid var(--line);padding:16px;display:grid;gap:14px}
+.opts{border-top:1px solid var(--line);padding:16px;display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
 .tabs{display:inline-flex;background:var(--ink);border:1px solid var(--line);border-radius:var(--r-md);padding:3px;gap:2px;justify-self:start}
 .tab{display:flex;align-items:center;gap:8px;padding:7px 16px;border-radius:7px;font-weight:600;font-size:14px;color:var(--muted)}
 .tab[aria-selected="true"]{background:var(--raised);color:var(--text)}
@@ -98,6 +98,9 @@ button:disabled{cursor:default}
 .choice .hint{color:var(--faint);font-weight:400;margin-left:4px}
 .choice[aria-checked="true"] .hint{color:var(--muted)}
 .row-label{font-size:13px;color:var(--faint);margin:0 0 6px}
+.sp-note{display:flex;gap:7px;align-items:flex-start}
+.sp-note .i{flex:none;margin-top:2px}
+.sp-note.warn{color:var(--amber)}
 .marks{list-style:none;margin:0;padding:9px 11px;max-height:228px;overflow:auto;background:var(--ink);border:1px solid var(--line);border-radius:var(--r-sm);display:grid;gap:4px}
 .marks.flash{animation:flash 1.1s ease-out}
 .marks li{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:baseline;font-size:12.5px;min-width:0}
@@ -377,7 +380,7 @@ const icon = (n, cls = "") => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="n
 /* ───────── strings ───────── */
 const T = {
   en: {
-    placeholder: "Paste a link from YouTube, SoundCloud, Vimeo…",
+    placeholder: "Paste a link from YouTube, Spotify, SoundCloud…",
     paste: "Paste", clear: "Clear", lookUp: "Look up link", settings: "Settings", quit: "Quit Siphon",
     help: "Help", helpTitle: "How Siphon works",
     langGroup: "Language", linkLabel: "Link", modeLabel: "What to download",
@@ -385,6 +388,11 @@ const T = {
     wavNoCover: "WAV cannot carry cover art. FLAC is lossless too, keeps the cover, and is smaller.",
     destination: "Destination", addDestination: "Add a folder", removeDest: "Remove",
     splitChapters: "Split into tracks", tracksN: n => `${n} tracks`,
+    spotifySure: "Studio version found on YouTube Music, same length as on Spotify.",
+    spotifyUnsure: (f, g) => `Closest song on YouTube Music: ${f}, ${g} s off the Spotify length. Listen before you sample, it may be another version.`,
+    spotifyList: "Each track is looked up on YouTube Music, studio version only. Tracks with no sure match are skipped, and the download names them.",
+    spotifyCapped: "Without an account, Spotify only shows the first 100 tracks of a playlist.",
+    missing: names => `Not found on YouTube Music: ${names}`,
     muteToggle: "No sound", muteHint: "video only",
     privateToggle: "Private", privateHint: "no trace", privateTip: "Nothing kept in the list, the log or the file's tags",
     zipToggle: "Zip archive", zipHint: "a single file",
@@ -416,7 +424,7 @@ const T = {
     download: "Download", added: "Added to downloads",
     savingTo: "Saving to", change: "Change", openFolder: "Open folder", folder: "Download folder",
     downloads: "Downloads", clearFinished: "Clear finished",
-    playlist: "Playlist", videosN: n => `${n} ${n === 1 ? "video" : "videos"}`,
+    playlist: "Playlist", album: "Album", videosN: n => `${n} ${n === 1 ? "video" : "videos"}`,
     cancel: "Cancel", reveal: "Show in folder", saveCopy: "Save a copy", retry: "Retry",
     itemOf: (i, n) => `${i} of ${n}`, left: t => `${t} left`,
     savedN: n => `${n} ${n === 1 ? "file" : "files"} saved`, savedFailed: (n, f) => `${n} saved, ${f} failed`,
@@ -430,7 +438,7 @@ const T = {
       queued: "Waiting", engine: "Waiting for engine update", starting: "Starting",
       download: "Downloading", download_video: "Downloading video", download_audio: "Downloading audio", download_media: "Downloading",
       merging: "Merging video and audio", converting: "Converting", cover: "Adding cover", tagging: "Writing tags",
-      splitting: "Splitting into tracks",
+      splitting: "Splitting into tracks", matching: "Looking up on YouTube Music",
       muting: "Removing sound", zipping: "Zipping",
       finishing: "Saving", processing: "Processing", done: "Saved", canceled: "Canceled"
     },
@@ -457,6 +465,10 @@ const T = {
       forbidden: "Siphon refused the request. Reload the page.",
       bad_destination: "That destination could not be saved.",
       no_tracklist: "No tracklist found in the comments.",
+      spotify_private: "Spotify won’t show this playlist, it is probably private. Copy the link of each track instead: right-click, Share, Copy Song Link.",
+      spotify_missing: "This track isn’t on YouTube Music, at least not in a version Siphon can trust.",
+      spotify_unsure: "No sure match for this track. Paste its link into Siphon to see the closest song and decide.",
+      spotify_none: "None of these tracks has a sure match on YouTube Music.",
       login: "This needs an account. Turn on “Sign in through a browser” in settings, signed in to the site there.",
       cookies: "Siphon could not read that browser's cookies. Close the browser and retry, or pick another one in settings.",
       too_many: "That's the maximum number of destinations.",
@@ -464,7 +476,7 @@ const T = {
     }
   },
   fr: {
-    placeholder: "Colle un lien YouTube, SoundCloud, Vimeo…",
+    placeholder: "Colle un lien YouTube, Spotify, SoundCloud…",
     paste: "Coller", clear: "Effacer", lookUp: "Analyser le lien", settings: "Réglages", quit: "Quitter Siphon",
     help: "Aide", helpTitle: "Comment ça marche",
     langGroup: "Langue", linkLabel: "Lien", modeLabel: "Que télécharger",
@@ -472,6 +484,11 @@ const T = {
     wavNoCover: "Le WAV ne peut pas porter de pochette. Le FLAC est aussi sans perte, la garde, et pèse moins lourd.",
     destination: "Destination", addDestination: "Ajouter un dossier", removeDest: "Retirer",
     splitChapters: "Découper en morceaux", tracksN: n => `${n} morceaux`,
+    spotifySure: "Version studio trouvée sur YouTube Music, même durée que sur Spotify.",
+    spotifyUnsure: (f, g) => `Titre le plus proche sur YouTube Music : ${f}, à ${g} s de la durée Spotify. Écoute avant de sampler, ce n’est peut-être pas la même version.`,
+    spotifyList: "Chaque morceau est cherché sur YouTube Music, en version studio uniquement. Ceux sans correspondance sûre sont ignorés, et le téléchargement te dit lesquels.",
+    spotifyCapped: "Sans compte, Spotify ne montre que les 100 premiers titres d’une playlist.",
+    missing: names => `Introuvables sur YouTube Music : ${names}`,
     muteToggle: "Sans le son", muteHint: "image seule",
     privateToggle: "Privé", privateHint: "aucune trace", privateTip: "Rien de gardé dans la liste, le journal ni les tags du fichier",
     zipToggle: "Archiver en zip", zipHint: "un seul fichier",
@@ -503,7 +520,7 @@ const T = {
     download: "Télécharger", added: "Ajouté aux téléchargements",
     savingTo: "Enregistrement dans", change: "Changer", openFolder: "Ouvrir le dossier", folder: "Dossier de téléchargement",
     downloads: "Téléchargements", clearFinished: "Effacer les terminés",
-    playlist: "Playlist", videosN: n => `${n} ${n === 1 ? "vidéo" : "vidéos"}`,
+    playlist: "Playlist", album: "Album", videosN: n => `${n} ${n === 1 ? "vidéo" : "vidéos"}`,
     cancel: "Annuler", reveal: "Afficher dans le dossier", saveCopy: "Enregistrer une copie", retry: "Réessayer",
     itemOf: (i, n) => `${i} sur ${n}`, left: t => `encore ${t}`,
     savedN: n => `${n} ${n === 1 ? "fichier enregistré" : "fichiers enregistrés"}`, savedFailed: (n, f) => `${n} enregistrés, ${f} en échec`,
@@ -517,7 +534,7 @@ const T = {
       queued: "En attente", engine: "En attente du moteur", starting: "Démarrage",
       download: "Téléchargement", download_video: "Téléchargement de la vidéo", download_audio: "Téléchargement de l’audio", download_media: "Téléchargement",
       merging: "Assemblage vidéo et audio", converting: "Conversion", cover: "Ajout de la pochette", tagging: "Écriture des tags",
-      splitting: "Découpage en morceaux",
+      splitting: "Découpage en morceaux", matching: "Recherche sur YouTube Music",
       muting: "Retrait du son", zipping: "Création du zip",
       finishing: "Enregistrement", processing: "Traitement", done: "Enregistré", canceled: "Annulé"
     },
@@ -544,6 +561,10 @@ const T = {
       forbidden: "Siphon a refusé la requête. Recharge la page.",
       bad_destination: "Cette destination n’a pas pu être enregistrée.",
       no_tracklist: "Aucune tracklist trouvée dans les commentaires.",
+      spotify_private: "Spotify ne montre pas cette playlist, elle est sûrement privée. Copie plutôt le lien de chaque morceau : clic droit, Partager, Copier le lien du titre.",
+      spotify_missing: "Ce morceau n’est pas sur YouTube Music, en tout cas pas dans une version fiable.",
+      spotify_unsure: "Pas de correspondance sûre pour ce morceau. Colle son lien dans Siphon pour voir le titre le plus proche et décider.",
+      spotify_none: "Aucun de ces morceaux n’a de correspondance sûre sur YouTube Music.",
       login: "Ce contenu demande un compte. Active « Se connecter via un navigateur » dans les réglages, en étant connecté au site.",
       cookies: "Siphon n’a pas pu lire les cookies de ce navigateur. Ferme-le et réessaie, ou choisis-en un autre dans les réglages.",
       too_many: "Nombre maximum de destinations atteint.",
@@ -632,7 +653,7 @@ function fmtBytes(b) {
   return `${n(b / 1e9, 2)}\u00a0${u[2]}`;
 }
 const fmtSpeed = v => v ? `${fmtBytes(v)}/s` : "";
-const SITES = { youtube: "YouTube", youtubetab: "YouTube", youtubemusic: "YouTube Music", soundcloud: "SoundCloud", soundcloudplaylist: "SoundCloud", soundcloudset: "SoundCloud", vimeo: "Vimeo", dailymotion: "Dailymotion", twitter: "X", instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", bandcamp: "Bandcamp", twitch: "Twitch", twitchvod: "Twitch", twitchclips: "Twitch", reddit: "Reddit", mixcloud: "Mixcloud" };
+const SITES = { youtube: "YouTube", youtubetab: "YouTube", youtubemusic: "YouTube Music", soundcloud: "SoundCloud", soundcloudplaylist: "SoundCloud", soundcloudset: "SoundCloud", vimeo: "Vimeo", dailymotion: "Dailymotion", twitter: "X", instagram: "Instagram", tiktok: "TikTok", facebook: "Facebook", bandcamp: "Bandcamp", twitch: "Twitch", twitchvod: "Twitch", twitchclips: "Twitch", reddit: "Reddit", mixcloud: "Mixcloud", spotify: "Spotify" };
 const siteName = s => SITES[String(s || "").toLowerCase()] || s || "";
 function normalizeUrl(raw) {
   raw = String(raw || "").trim();
@@ -733,7 +754,8 @@ function renderCard() {
   }
   const i = S.info;
   const facts = [];
-  if (i.kind === "playlist") facts.push(`<span class="fact">${icon("list-video")}${esc(i.count ? `${t().playlist}, ${t().videosN(i.count)}` : t().playlist)}</span>`);
+  const countN = i.spotify ? t().tracksN : t().videosN, listName = i.spotify?.kind === "album" ? t().album : t().playlist;
+  if (i.kind === "playlist") facts.push(`<span class="fact">${icon("list-video")}${esc(i.count ? `${listName}, ${countN(i.count)}` : listName)}</span>`);
   if (i.duration) facts.push(`<span class="fact">${fmtDur(i.duration)}</span>`);
   if (i.site) facts.push(`<span class="fact">${esc(siteName(i.site))}</span>`);
   const thumb = safeImg(i.thumbnail);
@@ -832,6 +854,7 @@ function renderOptions() {
     if (p.format === "mp3") rows += `<div class="choices" role="radiogroup" aria-label="${esc(t().bitrateLabel)}">${MP3_RATES.map(b => choice("bitrate", b, `${b} ${t().kbps}`, p.quality === b)).join("")}</div>`;
     // the format cannot hold one, so say so here rather than let it be discovered
     if (p.format === "wav") rows += `<p class="row-label" style="margin:0">${esc(t().wavNoCover)}</p>`;
+    if (i.spotify) rows += spotifyNote(i.spotify);
   } else {
     const q = effectiveQuality();
     rows += `<div class="choices">${sw("mute", "volume-x", t().muteToggle, t().muteHint)}</div>`;
@@ -909,6 +932,13 @@ function marksList(i) {
   }).join("");
   return `<ol class="marks">${rowsHtml}</ol>`;
 }
+/* A Spotify link is downloaded from YouTube Music: say what was found there,
+   and when the match is not sure, say so before anything is saved. */
+function spotifyNote(sp) {
+  const note = (ico, text, warn) => `<p class="row-label sp-note${warn ? " warn" : ""}" style="margin:0">${icon(ico, "sm")}<span>${esc(text)}</span></p>`;
+  if (sp.kind !== "track") return note("list-video", t().spotifyList) + (sp.capped ? note("circle-alert", t().spotifyCapped, true) : "");
+  return sp.sure ? note("check", t().spotifySure) : note("circle-alert", t().spotifyUnsure(sp.found, sp.gap), true);
+}
 function downloadLabel(mode) {
   if (Date.now() - S.addedAt < 1400) return t().added;
   const p = effectivePreset();
@@ -944,7 +974,8 @@ async function startDownload() {
   btn.disabled = true;
   const p = effectivePreset(), mode = p.mode;
   const body = {
-    url: i.url || S.url, mode, title: i.title, thumbnail: i.thumbnail,
+    url: i.url || S.url, mode, title: i.spotify?.name || i.title, thumbnail: i.thumbnail,
+    name: i.spotify?.kind === "track" ? i.spotify.name : "",
     playlist: i.kind === "playlist", count: i.count || 0,
     destination: S.dests.active, marks: S.split && canSplit() ? currentMarks() : [],
     format: mode === "audio" ? p.format : "mp4",
@@ -987,7 +1018,7 @@ function rowHtml(j) {
     <div class="jact"></div>`;
 }
 function updateRow(el, j, force) {
-  const key = [lang, j.status, j.stage, j.percent, j.speed, j.eta, j.item, j.items, j.files.length, j.size, j.failed].join("|");
+  const key = [lang, j.status, j.stage, j.percent, j.speed, j.eta, j.item, j.items, j.files.length, j.size, j.failed, (j.missing || []).length].join("|");
   if (!force && el._key === key) return;
   el._key = key;
   el.className = `job ${j.status}${el.classList.contains("flash") ? " flash" : ""}`;
@@ -1011,7 +1042,8 @@ function updateRow(el, j, force) {
   meter.classList.toggle("wait", j.status === "queued" || j.stage === "starting" || j.stage === "engine");
   meter.style.setProperty("--p", downloading ? j.percent : 0);
   const det = el.querySelector(".jdetail");
-  const detail = j.status === "error" ? (j.error?.detail || "") : "";
+  const detail = j.status === "error" ? (j.error?.detail || "")
+    : j.status === "done" && j.missing?.length ? t().missing(j.missing.join(", ")) : "";
   det.hidden = !detail; det.textContent = detail; det.title = detail;
   const acts = [];
   if (active) acts.push(["cancel", "x", t().cancel]);
@@ -1066,7 +1098,7 @@ $("#list").addEventListener("click", async e => {
     if (a === "reveal") await api(`/api/jobs/${id}/reveal`, {});
     if (a === "save") { const link = document.createElement("a"); link.href = `/api/jobs/${id}/file`; link.download = ""; document.body.appendChild(link); link.click(); link.remove(); }
     if (a === "retry") {
-      const { job } = await api("/api/download", { url: j.url, mode: j.mode, format: j.format, quality: j.quality, title: j.title, thumbnail: j.thumbnail, playlist: j.playlist, count: j.items, mute: j.mute, zip: j.zip });
+      const { job } = await api("/api/download", { url: j.url, name: j.name, mode: j.mode, format: j.format, quality: j.quality, title: j.title, thumbnail: j.thumbnail, playlist: j.playlist, count: j.items, mute: j.mute, zip: j.zip });
       S.jobs = [job, ...S.jobs]; S.flashId = job.id; renderJobs(); schedulePoll(300);
     }
     clearActionError();
@@ -1323,6 +1355,13 @@ const HELP = {
       p: ["Colle le lien d’une playlist, publique ou non répertoriée : chaque élément est téléchargé dans un dossier à son nom, numéroté dans l’ordre. Un élément supprimé ou privé est sauté sans bloquer le reste.",
           "Les fichiers arrivent au fur et à mesure. Coche *Archiver en zip* pour obtenir un seul fichier à la place, pratique pour envoyer la playlist à quelqu’un."] },
 
+    { h: "Depuis Spotify",
+      p: ["Le son de Spotify est protégé et Siphon n’y touche pas. Il lit seulement la liste des morceaux, puis va chercher chacun sur *YouTube Music*, dans les titres envoyés par les labels : la version studio, celle que tu entends sur Spotify.",
+          "C’est la durée qui fait la différence. Sur YouTube, le premier résultat est souvent le clip, avec son intro, ses coupes et ses effets : le clip de *Loser* de Tame Impala dure 45 secondes de plus que le morceau. Siphon ne garde qu’un titre de même durée à deux secondes près, du même artiste, sans « live », « remix », « demo » ou « sped up » que Spotify n’aurait pas.",
+          "Pour un morceau, l’aperçu te dit ce qu’il a trouvé. Si la correspondance n’est pas sûre, il te montre le titre le plus proche et l’écart, et c’est toi qui décides.",
+          "Pour un album ou une playlist publique, les morceaux sans correspondance sûre sont ignorés, et le téléchargement les liste. Une playlist relancée ne récupère que les morceaux ajoutés depuis. Une playlist privée ne se lit pas sans compte : copie le lien de chaque morceau (clic droit, Partager, Copier le lien du titre).",
+          "La qualité est celle de YouTube Music, compressée. Le WAV évite d’en perdre davantage, sans rendre ce qui manque déjà."] },
+
     { h: "Le mode privé",
       p: ["Coche *Privé* avant de télécharger. Le téléchargement apparaît dans la liste sans son titre, puis en disparaît quelques secondes après la fin.",
           "D’ordinaire, Siphon écrit l’adresse d’origine dans son journal et dans les tags du fichier. En privé, il ne le fait pas. Le titre et l’artiste restent dans le fichier.",
@@ -1388,6 +1427,13 @@ const HELP = {
     { h: "Playlists",
       p: ["Paste a playlist link, public or unlisted: each item is downloaded into a folder named after it, numbered in order. A deleted or private item is skipped without holding up the rest.",
           "Files arrive as they finish. Tick *Zip archive* to get a single file instead, handy for sending the playlist to someone."] },
+
+    { h: "From Spotify",
+      p: ["Spotify’s audio is protected and Siphon leaves it alone. It only reads the track list, then looks each track up on *YouTube Music*, among the songs labels deliver themselves: the studio version, the one you hear on Spotify.",
+          "Length is what tells them apart. On YouTube the first result is often the music video, with its intro, cuts and effects: the video of *Loser* by Tame Impala runs 45 seconds longer than the song. Siphon only keeps a song within two seconds of the Spotify length, by the same artist, with no “live”, “remix”, “demo” or “sped up” that Spotify’s title lacks.",
+          "For a single track, the preview says what it found. When the match is not sure, it shows the closest song and how far off it is, and you decide.",
+          "For an album or a public playlist, tracks with no sure match are skipped and the download lists them. Running a playlist again only fetches the tracks added since. A private playlist can’t be read without an account: copy the link of each track instead (right-click, Share, Copy Song Link).",
+          "Quality is YouTube Music’s, compressed. WAV keeps from losing more, but can’t bring back what is already gone."] },
 
     { h: "Private mode",
       p: ["Tick *Private* before downloading. The download shows in the list without its title, then leaves it a few seconds after it finishes.",
