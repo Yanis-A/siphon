@@ -17,10 +17,10 @@ Download the archive for your system from the [latest release](https://github.co
 
 | System | Archive |
 |---|---|
-| Windows | `Siphon-…-windows-x64.zip` |
-| macOS, Apple Silicon (M1 and later) | `Siphon-…-macos-arm64.tar.gz` |
-| macOS, Intel | `Siphon-…-macos-x64.tar.gz` |
-| Linux | `Siphon-…-linux-x64.tar.gz` |
+| Windows | [`Siphon-windows-x64.zip`](https://github.com/Yanis-A/siphon/releases/latest/download/Siphon-windows-x64.zip) |
+| macOS, Apple Silicon (M1 and later) | [`Siphon-macos-arm64.tar.gz`](https://github.com/Yanis-A/siphon/releases/latest/download/Siphon-macos-arm64.tar.gz) |
+| macOS, Intel | [`Siphon-macos-x64.tar.gz`](https://github.com/Yanis-A/siphon/releases/latest/download/Siphon-macos-x64.tar.gz) |
+| Linux | [`Siphon-linux-x64.tar.gz`](https://github.com/Yanis-A/siphon/releases/latest/download/Siphon-linux-x64.tar.gz) |
 
 Siphon is not signed with a paid certificate, so Windows and macOS each warn once that it comes from an unknown developer. That is all the warning means.
 
@@ -28,7 +28,7 @@ Siphon is not signed with a paid certificate, so Windows and macOS each warn onc
 
 **macOS:** double-click the archive to unpack it, then double-click `Siphon.command`. The first time, macOS refuses to open it: go to *System Settings → Privacy & Security*, scroll to the line about `Siphon.command`, click *Open Anyway* and confirm. On macOS 14 and older, right-click `Siphon.command` → *Open* does the same. Every launch after that is a plain double-click.
 
-**Linux:** `tar -xzf Siphon-*-linux-x64.tar.gz`, then `./Siphon/Siphon.command`.
+**Linux:** `tar -xzf Siphon-linux-x64.tar.gz`, then `./Siphon/Siphon.command`.
 
 **From the source:** clone the repository and run the same launcher. Without a bundled Python it uses yours, 3.10 or newer: on Windows, tick *Add python.exe to PATH* when installing it; on Debian and Ubuntu, `sudo apt install python3-venv python3-tk` (the second one only for the folder picker).
 

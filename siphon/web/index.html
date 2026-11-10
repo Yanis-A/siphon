@@ -920,7 +920,7 @@ function sourceLabel(s) {
 function marksList(i) {
   const rowsHtml = currentMarks().map((m, n) => {
     const name = m.title || `${i.title} ${n + 1}`;
-    return `<li><span class="mno">${String(n + 1).padStart(3, "0")}</span><span class="mname">${esc(name)}</span><span class="mtime">${esc(fmtDur(m.start))}</span></li>`;
+    return `<li><span class="mno">${String(n + 1).padStart(3, "0")}</span><span class="mname">${esc(name)}</span><span class="mtime">${esc(fmtDur(m.start) || "0:00")}</span></li>`;
   }).join("");
   return `<ol class="marks">${rowsHtml}</ol>`;
 }

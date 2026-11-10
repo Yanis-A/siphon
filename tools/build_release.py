@@ -84,12 +84,14 @@ def app_files() -> list[str]:
     return sorted(p for p in out.decode("utf-8").split("\0") if p and not DEV_ONLY.match(p))
 
 
-def build(target: str, version: str, out: Path, cache: Path) -> Path:
+def build(target: str, out: Path, cache: Path) -> Path:
     triple, kind = TARGETS[target]
     runtime = checked_runtime(triple, cache)
     windows = target.startswith("windows")
     files = [f for f in app_files() if f not in LAUNCHERS or f == ("Siphon.bat" if windows else "Siphon.command")]
-    archive = out / f"Siphon-{version}-{target}.{kind}"
+    # No version in the name: releases/latest/download/<name> then always
+    # points at the newest one, so a download link written once stays valid.
+    archive = out / f"Siphon-{target}.{kind}"
     # a fixed date: two builds of the same sources give the same archive
     stamp = 1_700_000_000
     with tarfile.open(runtime, "r:gz") as src:
@@ -135,7 +137,7 @@ def main() -> int:
     cache.mkdir(parents=True, exist_ok=True)
     version = app_version()
     print(f"Siphon {version}, Python {PYTHON} ({PBS_RELEASE})")
-    built = [build(t, version, out, cache) for t in targets]
+    built = [build(t, out, cache) for t in targets]
     sums = out / "SHA256SUMS.txt"
     lines = [f"{hashlib.sha256(p.read_bytes()).hexdigest()}  {p.name}" for p in sorted(out.glob("Siphon-*"))]
     sums.write_text("\n".join(lines) + "\n", encoding="utf-8")

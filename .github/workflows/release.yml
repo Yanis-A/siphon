@@ -52,13 +52,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Expand-Archive (Get-Item "Siphon-*-${{ matrix.target }}.zip") -DestinationPath app
+          Expand-Archive "Siphon-${{ matrix.target }}.zip" -DestinationPath app
           Start-Process cmd -ArgumentList '/c', 'app\Siphon\Siphon.bat'
       - name: Unpack and launch (macOS, Linux)
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          mkdir app && tar -xzf Siphon-*-${{ matrix.target }}.tar.gz -C app
+          mkdir app && tar -xzf Siphon-${{ matrix.target }}.tar.gz -C app
           if [ "$RUNNER_OS" = macOS ]; then
             # what a browser download carries: the launcher has to cope with it
             xattr -r -w com.apple.quarantine "0083;00000000;Safari;" app/Siphon
