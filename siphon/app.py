@@ -30,7 +30,7 @@ from pathlib import Path
 from urllib.parse import quote, urlparse
 
 APP = "Siphon"
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 ROOT = Path(__file__).resolve().parent          # .../Siphon/siphon
 BASE = ROOT.parent                              # .../Siphon
