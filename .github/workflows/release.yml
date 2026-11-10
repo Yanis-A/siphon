@@ -73,7 +73,8 @@ jobs:
           done
           curl -sf http://127.0.0.1:8790/api/ping || { echo "Siphon never answered"; exit 1; }
           echo
-          grep -i '^home' app/Siphon/.venv/pyvenv.cfg | tee /dev/stderr | grep -q runtime
+          grep -i '^home' app/Siphon/.venv/pyvenv.cfg
+          grep -i '^home' app/Siphon/.venv/pyvenv.cfg | grep -q runtime
           py=app/Siphon/runtime/bin/python3
           [ "$RUNNER_OS" = Windows ] && py=app/Siphon/runtime/python.exe
           "$py" - <<'EOF'
