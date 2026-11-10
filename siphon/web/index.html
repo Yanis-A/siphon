@@ -275,10 +275,6 @@ button:disabled{cursor:default}
         <button class="btn2" id="updateBtn" type="button"><span data-icon="refresh-cw"></span><span data-t="updateEngine"></span></button>
         <p class="note" id="engineNote"></p>
         <div class="sep"></div>
-        <button class="choice" type="button" id="keepAlive" role="switch" aria-checked="false"
-                style="width:100%;justify-content:center"><span data-t="keepAlive"></span></button>
-        <p class="note" style="margin:8px 0 0" data-t="keepAliveHint"></p>
-        <div class="sep"></div>
         <h3 data-t="cookies"></h3>
         <p class="note" style="margin:0 0 10px" data-t="cookiesHint"></p>
         <div class="choices" id="cookiePick" role="radiogroup"></div>
@@ -413,8 +409,6 @@ const T = {
     pasteHint: "One per line, in order. For when the artist lists the tracks but gives no times: select the passages by ear, and the names drop into place.",
     applyTitles: "Apply the names",
     destinations: "Destinations", destHint: "A folder and the format it is for. Picking one sets both.",
-    keepAlive: "Keep Siphon running",
-    keepAliveHint: "Siphon normally quits ten minutes after you close its tab. Keep it running for the browser extension, which needs it to answer.",
     cookies: "Sign in through a browser", cookiesOff: "Off",
     cookiesHint: "Siphon downloads on its own and is signed in to nothing, which is why age-restricted, members-only and private links fail. Point it at a browser and it reads that browser's session from disk: nothing is exported, nothing leaves this machine.",
     cookiesOn: b => `Siphon now acts as you are signed in on ${b}. Your own account carries the activity, so leave this off when you do not need it.`,
@@ -509,8 +503,6 @@ const T = {
     pasteHint: "Un par ligne, dans l’ordre. Pour quand l’artiste liste les morceaux sans donner les horaires : tu sélectionnes les passages à l’oreille, et les noms viennent se mettre en face.",
     applyTitles: "Appliquer les noms",
     destinations: "Destinations", destHint: "Un dossier et le format qui va avec. En choisir un règle les deux.",
-    keepAlive: "Garder Siphon actif",
-    keepAliveHint: "Siphon se ferme normalement dix minutes après que tu quittes son onglet. Garde-le actif pour l’extension navigateur, qui a besoin qu’il réponde.",
     cookies: "Se connecter via un navigateur", cookiesOff: "Désactivé",
     cookiesHint: "Siphon télécharge de son côté et n’est connecté à rien : c’est pour ça que les contenus avec limite d’âge, réservés aux membres ou privés échouent. Désigne un navigateur et il lira sa session sur le disque : rien n’est exporté, rien ne quitte cette machine.",
     cookiesOn: b => `Siphon agit maintenant comme ta session ${b}. C’est ton compte qui porte l’activité : laisse ça désactivé quand tu n’en as pas besoin.`,
@@ -1171,7 +1163,6 @@ function renderSettings() {
     const c = S.engine.checked;
     note.textContent = t().checked(c ? new Date(c * 1000).toLocaleString(lang === "fr" ? "fr-FR" : "en-GB", { dateStyle: "medium", timeStyle: "short" }) : t().never);
   }
-  $("#keepAlive").setAttribute("aria-checked", String(!!S.keepAlive));
   const browsers = S.browsers && S.browsers.length ? S.browsers : ["firefox", "chrome", "edge", "brave"];
   const names = { firefox: "Firefox", chrome: "Chrome", edge: "Edge", brave: "Brave",
                   chromium: "Chromium", opera: "Opera", vivaldi: "Vivaldi", safari: "Safari" };
@@ -1283,17 +1274,6 @@ async function setCookieBrowser(which) {
     S.cookiesFrom = before; renderSettings(); showActionError(e);
   }
 }
-$("#keepAlive").addEventListener("click", async () => {
-  const next = !S.keepAlive;
-  S.keepAlive = next; renderSettings();          // optimistic; the server confirms
-  try {
-    const d = await api("/api/settings", { keepAlive: next });
-    S.keepAlive = !!d.keepAlive; renderSettings(); clearActionError();
-  } catch (e) {
-    if (aborted(e)) return;
-    S.keepAlive = !next; renderSettings(); showActionError(e);
-  }
-});
 $("#quitBtn").addEventListener("click", async () => {
   if (S.jobs.some(j => j.status === "running" || j.status === "queued") && !confirm(t().quitConfirm)) return;
   try { await api("/api/quit", {}); } catch {}
@@ -1389,11 +1369,6 @@ const HELP = {
              ["molette", "zoom"], ["Maj+molette", "défilement"], ["F", "cadre la sélection"],
              ["0", "tout le fichier"], ["Entrée", "nommer"], ["Suppr", "retirer"]] },
 
-    { h: "L’extension Firefox",
-      p: ["Elle évite le copier-coller : tu cliques son icône pendant que tu écoutes quelque chose, et le panneau affiche déjà la page en cours avec tes destinations. Un clic et c’est parti. Un clic droit fonctionne aussi sur une page, un lien ou une vidéo.",
-          "Pour l’installer : ouvre *about:debugging* dans Firefox, « Ce Firefox », puis *Charger un module temporaire* et choisis le fichier manifest.json du dossier extension.",
-          "Important : active *Garder Siphon actif* dans les réglages. Sans ça Siphon s’éteint au bout de dix minutes, et une extension ne peut pas rallumer un programme."] },
-
     { h: "Se connecter via un navigateur",
       p: ["Siphon télécharge de son côté et n’est connecté à rien. C’est pour ça que les vidéos avec limite d’âge, réservées aux membres, privées ou Instagram échouent : *être connecté dans ton navigateur ne lui sert à rien* par défaut.",
           "Dans les réglages, tu peux lui désigner un navigateur. Il lira la session directement sur le disque : tu n’exportes rien, tu ne colles aucun mot de passe, et rien ne quitte ta machine. Ça débloque aussi le « confirme que tu n’es pas un robot » de YouTube.",
@@ -1461,11 +1436,6 @@ const HELP = {
       keys: [["Space", "replay the selection"], ["L", "loop it"], ["[  ]", "trim edges to the playhead"],
              ["wheel", "zoom"], ["Shift+wheel", "pan"], ["F", "fit selection"],
              ["0", "whole file"], ["Enter", "name it"], ["Del", "remove"]] },
-
-    { h: "The Firefox extension",
-      p: ["It removes the copy-paste: click its toolbar button while you are listening to something and the panel already shows the current page with your destinations. One click and it is going. Right-click works too, on a page, a link or a video.",
-          "To install it: open *about:debugging* in Firefox, \"This Firefox\", then *Load Temporary Add-on* and pick manifest.json inside the extension folder.",
-          "Important: turn on *Keep Siphon running* in the settings. Otherwise Siphon quits after ten minutes, and an add-on cannot wake a program back up."] },
 
     { h: "Signing in through a browser",
       p: ["Siphon downloads on its own and is signed in to nothing. That is why age-restricted, members-only, private and Instagram links fail: *being signed in to your browser means nothing to it* by default.",
@@ -2075,7 +2045,6 @@ async function loadState() {
     const d = await api("/api/state");
     S.folder = d.folder; S.jobs = d.jobs; S.engine = d.engine || {};
     if (d.destinations) S.dests = d.destinations;
-    S.keepAlive = !!d.keepAlive;
     S.cookiesFrom = d.cookiesFrom || ""; S.browsers = d.browsers || [];
     renderJobs(); renderEngine(); if (S.info) renderOptions();
   } catch (e) {

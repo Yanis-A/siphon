@@ -1773,14 +1773,11 @@ class State:
         self.jobs = JobManager(self.engine)
         cfg = read_json(CONFIG_FILE, {})
         self.dests = Destinations(cfg)
-        # the browser extension needs Siphon to still be there when it calls, so
-        # the idle watchdog becomes optional
-        self.keep_alive = bool(cfg.get("keepAlive"))
         want = str(cfg.get("cookiesFrom") or "").lower()
         self.engine.cookies_from = want if want in COOKIE_BROWSERS else ""
         self.cfg_lock = threading.Lock()      # config writes arrive from several threads
         self.last_seen = time.time()
-        self.page_seen = 0.0                  # last poll from a Siphon tab, not the extension
+        self.page_seen = 0.0                  # last poll from a Siphon tab
         self.server: ThreadingHTTPServer | None = None
 
     @property
@@ -1790,17 +1787,11 @@ class State:
     def save_config(self) -> None:
         with self.cfg_lock:
             write_json(CONFIG_FILE, {"destinations": self.dests.items, "active": self.dests.active,
-                                     "keepAlive": self.keep_alive,
                                      "cookiesFrom": self.engine.cookies_from})
 
 
 STATE: State | None = None
 URL_RE = re.compile(r"^https?://[^\s/$.?#][^\s]*$", re.I)
-EXT_ORIGIN = re.compile(r"^(moz|chrome)-extension://[a-z0-9@._-]+$", re.I)
-
-
-def is_extension_origin(origin: str) -> bool:
-    return bool(origin) and bool(EXT_ORIGIN.fullmatch(origin))
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1820,34 +1811,14 @@ class Handler(BaseHTTPRequestHandler):
         assert STATE
         if self.headers.get("X-Siphon") != "1":
             return False
-        origin = self.headers.get("Origin")
-        if origin in (None, f"http://127.0.0.1:{STATE.port}", f"http://localhost:{STATE.port}"):
-            return True
-        # the browser extension speaks from its own origin. It still has to carry
-        # the header above, which no ordinary page can send cross-origin without
-        # a preflight, and preflights are only answered for these same origins.
-        return is_extension_origin(origin)
-
-    def do_OPTIONS(self):
-        assert STATE
-        origin = self.headers.get("Origin") or ""
-        if not self._host_ok() or not is_extension_origin(origin):
-            return self._send(403, b"Forbidden", "text/plain")
-        self.send_response(204)
-        self.send_header("Access-Control-Allow-Origin", origin)
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Siphon")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Max-Age", "600")
-        self.send_header("Content-Length", "0")
-        self.end_headers()
+        # only Siphon's own page: another site cannot send this header to it
+        # without a preflight, and no preflight is ever answered
+        return self.headers.get("Origin") in (None, f"http://127.0.0.1:{STATE.port}", f"http://localhost:{STATE.port}")
 
     def _send(self, code: int, body: bytes, ctype: str, extra: dict | None = None) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        origin = self.headers.get("Origin") or ""
-        if is_extension_origin(origin):
-            self.send_header("Access-Control-Allow-Origin", origin)
         extra = extra or {}
         if "Cache-Control" not in extra:
             self.send_header("Cache-Control", "no-store")
@@ -1892,12 +1863,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(200, {"app": APP, "version": VERSION})
         if path == "/api/state":
             return self._json(200, {"app": APP, "version": VERSION, "folder": STATE.folder,
-                                    "destinations": STATE.dests.public(), "keepAlive": STATE.keep_alive,
+                                    "destinations": STATE.dests.public(),
                                     "cookiesFrom": STATE.engine.cookies_from, "browsers": list(COOKIE_BROWSERS),
                                     "engine": STATE.engine.snapshot(), "jobs": STATE.jobs.list()})
         if path == "/api/jobs":
-            if not is_extension_origin(self.headers.get("Origin") or ""):
-                STATE.page_seen = time.time()
+            STATE.page_seen = time.time()
             return self._json(200, {"jobs": STATE.jobs.list(), "engine": STATE.engine.snapshot()})
         m = re.fullmatch(r"/api/jobs/([0-9a-f]{12})/(file|audio)", path)
         if m:
@@ -1969,6 +1939,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         assert STATE
         if not self._host_ok() or not self._origin_ok():
+            # the body is left unread, so the connection cannot carry another
+            # request: it would be parsed from the middle of this one
+            self.close_connection = True
             return self._send(403, b"Forbidden", "text/plain")
         STATE.last_seen = time.time()
         path = urlparse(self.path).path
@@ -2030,7 +2003,7 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 count = 0
             playlist = bool(body.get("playlist"))
-            # The extension sends a Spotify link straight here, with no preview:
+            # A Spotify list (and a retry of one) comes here as its Spotify link:
             # read its tracks now, it takes half a second, so the job knows what
             # it is from its first line in the list.
             url = expand_spotify(url)
@@ -2061,17 +2034,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/settings":
             changed = False
-            if "keepAlive" in body:
-                STATE.keep_alive = bool(body.get("keepAlive"))
-                changed = True
             if "cookiesFrom" in body:
                 want = str(body.get("cookiesFrom") or "").lower()
                 STATE.engine.cookies_from = want if want in COOKIE_BROWSERS else ""
                 changed = True
             if changed:
                 STATE.save_config()
-            return self._json(200, {"keepAlive": STATE.keep_alive,
-                                    "cookiesFrom": STATE.engine.cookies_from,
+            return self._json(200, {"cookiesFrom": STATE.engine.cookies_from,
                                     "browsers": list(COOKIE_BROWSERS)})
 
         if path == "/api/destinations/select":
@@ -2224,8 +2193,6 @@ def watchdog() -> None:
     assert STATE
     while True:
         time.sleep(15)
-        if STATE.keep_alive:
-            continue
         idle = time.time() - STATE.last_seen
         if idle > IDLE_EXIT_SECONDS and not STATE.jobs.active_count() and not STATE.engine.lock.locked():
             log.info("no open page for %ss, exiting", int(idle))
