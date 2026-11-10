@@ -1,0 +1,107 @@
+name: Release
+
+# A version tag (v1.2.0) builds the archives, tries each one on the system it
+# is for, and prepares a draft release with them. Running it by hand does the
+# first two only, to check a change before tagging.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Check the tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          app=$(sed -n 's/^VERSION = "\(.*\)"/\1/p' siphon/app.py)
+          test "v$app" = "${GITHUB_REF_NAME}" || { echo "tag ${GITHUB_REF_NAME} but app.py says $app"; exit 1; }
+      - run: python tools/build_release.py --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: archives
+          path: |
+            dist/Siphon-*
+            dist/SHA256SUMS.txt
+
+  # Each archive is unpacked and launched the way a person would, on a machine
+  # that never saw Siphon, until the server answers with its engine installed.
+  try:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: windows-x64 }
+          - { os: macos-latest, target: macos-arm64 }
+          - { os: ubuntu-latest, target: linux-x64 }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: archives
+      - name: Unpack and launch (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Expand-Archive (Get-Item "Siphon-*-${{ matrix.target }}.zip") -DestinationPath app
+          Start-Process cmd -ArgumentList '/c', 'app\Siphon\Siphon.bat'
+      - name: Unpack and launch (macOS, Linux)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir app && tar -xzf Siphon-*-${{ matrix.target }}.tar.gz -C app
+          if [ "$RUNNER_OS" = macOS ]; then
+            # what a browser download carries: the launcher has to cope with it
+            xattr -r -w com.apple.quarantine "0083;00000000;Safari;" app/Siphon
+          fi
+          ./app/Siphon/Siphon.command
+      - name: Wait for Siphon and check it runs on its own Python
+        shell: bash
+        run: |
+          for i in $(seq 1 150); do
+            curl -sf http://127.0.0.1:8790/api/ping && break
+            sleep 2
+          done
+          curl -sf http://127.0.0.1:8790/api/ping || { echo "Siphon never answered"; exit 1; }
+          echo
+          grep -i '^home' app/Siphon/.venv/pyvenv.cfg | tee /dev/stderr | grep -q runtime
+          py=app/Siphon/runtime/bin/python3
+          [ "$RUNNER_OS" = Windows ] && py=app/Siphon/runtime/python.exe
+          "$py" - <<'EOF'
+          import json, sys, time, urllib.request
+          req = urllib.request.Request("http://127.0.0.1:8790/api/state", headers={"X-Siphon": "1"})
+          for _ in range(30):
+              v = json.load(urllib.request.urlopen(req))["engine"]["versions"]
+              if v.get("yt_dlp") and v.get("ffmpeg"):
+                  break
+              time.sleep(2)
+          print(v)
+          sys.exit(0 if v.get("yt_dlp") and v.get("ffmpeg") else 1)
+          EOF
+          curl -sf -X POST -H 'X-Siphon: 1' -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8790/api/quit
+
+  release:
+    needs: try
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: archives
+      - name: Draft the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" Siphon-* SHA256SUMS.txt \
+            --repo "${GITHUB_REPOSITORY}" --draft --title "Siphon ${GITHUB_REF_NAME#v}" --generate-notes

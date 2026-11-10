@@ -5,3 +5,5 @@ __pycache__/
 
 # archive de distribution (le source est dans le depot)
 Siphon.zip
+dist/
+runtime/

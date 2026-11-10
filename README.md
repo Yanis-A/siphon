@@ -13,20 +13,24 @@ A private, local alternative to NoTube-style converters. Paste a link from YouTu
 
 ## Run it
 
-Needs [Python 3.10+](https://www.python.org/downloads/) first. The first launch installs the engine into a private `.venv` folder (about 80 MB, once). After that, Siphon opens in your browser in a second.
+Download the archive for your system from the [latest release](https://github.com/Yanis-A/siphon/releases/latest), unpack it anywhere, and launch Siphon from the folder. It carries its own Python, so there is nothing to install first. The first launch fetches the download engine (yt-dlp, Deno, FFmpeg: about 80 MB, once). After that, Siphon opens in your browser in a second.
 
-**Windows:** install Python and tick *Add python.exe to PATH* during the install. It is easy to miss, and nothing works without it. Then double-click `Siphon.bat`.
+| System | Archive |
+|---|---|
+| Windows | `Siphon-…-windows-x64.zip` |
+| macOS, Apple Silicon (M1 and later) | `Siphon-…-macos-arm64.tar.gz` |
+| macOS, Intel | `Siphon-…-macos-x64.tar.gz` |
+| Linux | `Siphon-…-linux-x64.tar.gz` |
 
-**macOS:** a file downloaded from the internet arrives without permission to run, and macOS refuses unsigned scripts on top of that. So the first launch takes two extra steps, once:
+Siphon is not signed with a paid certificate, so Windows and macOS each warn once that it comes from an unknown developer. That is all the warning means.
 
-```sh
-cd /path/to/Siphon
-chmod +x Siphon.command
-```
+**Windows:** right-click the zip, *Extract All*, then double-click `Siphon.bat` in the extracted folder (from inside the zip it cannot run). If Windows says it protected your PC, click *More info*, then *Run anyway*.
 
-Then **right-click `Siphon.command` → Open** (not a double-click), and confirm *Open* in the warning. Every launch after that is a plain double-click. The warning is Gatekeeper saying the script has no paid Apple signature, not that anything is wrong with it.
+**macOS:** double-click the archive to unpack it, then double-click `Siphon.command`. The first time, macOS refuses to open it: go to *System Settings → Privacy & Security*, scroll to the line about `Siphon.command`, click *Open Anyway* and confirm. On macOS 14 and older, right-click `Siphon.command` → *Open* does the same. Every launch after that is a plain double-click.
 
-**Linux:** `./Siphon.command`. On Debian and Ubuntu you may need `sudo apt install python3-venv python3-tk` first (the second one only for the folder picker).
+**Linux:** `tar -xzf Siphon-*-linux-x64.tar.gz`, then `./Siphon/Siphon.command`.
+
+**From the source:** clone the repository and run the same launcher. Without a bundled Python it uses yours, 3.10 or newer: on Windows, tick *Add python.exe to PATH* when installing it; on Debian and Ubuntu, `sudo apt install python3-venv python3-tk` (the second one only for the folder picker).
 
 Files go to `Downloads/Siphon` by default. Add more destinations from the settings (slider icon): each one is a folder plus the format it exists for, and they show up as a row of buttons under the download button.
 
@@ -65,17 +69,23 @@ The raw error from yt-dlp is shown under each failed download, and the full log 
 ```
 Siphon.bat / Siphon.command   launchers
 Siphon.ico                    icon, for a desktop or Start Menu shortcut
+runtime/                      Python, in the downloaded archives only
 siphon/app.py                 local server (127.0.0.1 only) and download queue
 siphon/setup_env.py           first-run engine install / repair
 siphon/web/index.html         interface, including the waveform editor
 extension/                    Firefox add-on: send the current tab to Siphon
 data/                         settings, logs, cache, temp files (created at runtime)
 .venv/                        private Python environment (created at runtime)
+tools/build_release.py        builds the archives (repository only)
 ```
 
 Delete the folder to uninstall.
 
 Download only what you have the right to use.
+
+## Releasing
+
+`python tools/build_release.py` builds the four archives into `dist/`, each with a standalone CPython from [python-build-standalone](https://github.com/astral-sh/python-build-standalone), checked against its published checksums. Pushing a tag that matches `VERSION` in `siphon/app.py` (`v1.1.0`) makes the *Release* workflow build them, launch each one on Windows, macOS and Linux until it answers with its engine installed, and prepare a draft release with them.
 
 ## License
 

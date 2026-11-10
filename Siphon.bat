@@ -31,6 +31,11 @@ exit /b 0
 
 :find_python
 set "PY="
+rem A downloaded Siphon carries its own Python: nothing to install first.
+if exist "%~dp0runtime\python.exe" (
+  set PY="%~dp0runtime\python.exe"
+  exit /b 0
+)
 py -3 -c "import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)" >nul 2>&1
 if errorlevel 1 goto :try_python
 set "PY=py -3"
