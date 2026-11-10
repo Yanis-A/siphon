@@ -1,3 +1,5 @@
+<img src=".github/logo.svg" width="72" height="72" alt="">
+
 # Siphon
 
 A private, local alternative to NoTube-style converters. Paste a link from YouTube, SoundCloud, Vimeo, Bandcamp and [hundreds of other sites](https://github.com/yt-dlp/yt-dlp/blob/master/supportedsites.md), pick a format, get the file. No ads, no upload, no file size limit: everything runs on your machine.
